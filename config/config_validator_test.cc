@@ -143,6 +143,145 @@ int main() {
     TestCase("Conflict - same address in both lists", !ConfigValidator::Validate(config).ok());
   }
 
+  // Test port configuration validation
+  {
+    DpdkConfig config;
+    DpdkPortConfig port;
+    
+    // Valid port configuration
+    port.port_id = 0;
+    port.num_rx_queues = 4;
+    port.num_tx_queues = 4;
+    port.num_descriptors = 1024;
+    port.mbuf_pool_size = 16384;
+    port.mbuf_size = 2048;
+    config.ports.push_back(port);
+    TestCase("Valid port configuration", ConfigValidator::Validate(config).ok());
+    
+    // Test duplicate port IDs
+    DpdkConfig config2;
+    DpdkPortConfig port1;
+    port1.port_id = 0;
+    port1.num_rx_queues = 4;
+    port1.num_tx_queues = 4;
+    port1.num_descriptors = 1024;
+    port1.mbuf_pool_size = 16384;
+    port1.mbuf_size = 2048;
+    config2.ports.push_back(port1);
+    
+    DpdkPortConfig port2 = port1;
+    port2.port_id = 0;  // Duplicate
+    config2.ports.push_back(port2);
+    TestCase("Invalid - duplicate port IDs", !ConfigValidator::Validate(config2).ok());
+    
+    // Test num_rx_queues = 0
+    DpdkConfig config3;
+    DpdkPortConfig port3;
+    port3.port_id = 0;
+    port3.num_rx_queues = 0;  // Invalid
+    port3.num_tx_queues = 4;
+    port3.num_descriptors = 1024;
+    port3.mbuf_pool_size = 16384;
+    port3.mbuf_size = 2048;
+    config3.ports.push_back(port3);
+    TestCase("Invalid - num_rx_queues = 0", !ConfigValidator::Validate(config3).ok());
+    
+    // Test num_tx_queues = 0
+    DpdkConfig config4;
+    DpdkPortConfig port4;
+    port4.port_id = 0;
+    port4.num_rx_queues = 4;
+    port4.num_tx_queues = 0;  // Invalid
+    port4.num_descriptors = 1024;
+    port4.mbuf_pool_size = 16384;
+    port4.mbuf_size = 2048;
+    config4.ports.push_back(port4);
+    TestCase("Invalid - num_tx_queues = 0", !ConfigValidator::Validate(config4).ok());
+    
+    // Test num_descriptors not power of 2
+    DpdkConfig config5;
+    DpdkPortConfig port5;
+    port5.port_id = 0;
+    port5.num_rx_queues = 4;
+    port5.num_tx_queues = 4;
+    port5.num_descriptors = 1000;  // Not power of 2
+    port5.mbuf_pool_size = 16384;
+    port5.mbuf_size = 2048;
+    config5.ports.push_back(port5);
+    TestCase("Invalid - num_descriptors not power of 2", !ConfigValidator::Validate(config5).ok());
+    
+    // Test valid power of 2 descriptors
+    DpdkConfig config6;
+    DpdkPortConfig port6;
+    port6.port_id = 0;
+    port6.num_rx_queues = 4;
+    port6.num_tx_queues = 4;
+    port6.num_descriptors = 512;  // Valid power of 2
+    port6.mbuf_pool_size = 16384;
+    port6.mbuf_size = 2048;
+    config6.ports.push_back(port6);
+    TestCase("Valid - num_descriptors = 512 (power of 2)", ConfigValidator::Validate(config6).ok());
+    
+    // Test mbuf_pool_size = 0
+    DpdkConfig config7;
+    DpdkPortConfig port7;
+    port7.port_id = 0;
+    port7.num_rx_queues = 4;
+    port7.num_tx_queues = 4;
+    port7.num_descriptors = 1024;
+    port7.mbuf_pool_size = 0;  // Invalid
+    port7.mbuf_size = 2048;
+    config7.ports.push_back(port7);
+    TestCase("Invalid - mbuf_pool_size = 0", !ConfigValidator::Validate(config7).ok());
+    
+    // Test mbuf_size = 0
+    DpdkConfig config8;
+    DpdkPortConfig port8;
+    port8.port_id = 0;
+    port8.num_rx_queues = 4;
+    port8.num_tx_queues = 4;
+    port8.num_descriptors = 1024;
+    port8.mbuf_pool_size = 16384;
+    port8.mbuf_size = 0;  // Invalid
+    config8.ports.push_back(port8);
+    TestCase("Invalid - mbuf_size = 0", !ConfigValidator::Validate(config8).ok());
+    
+    // Test multiple valid ports with different IDs
+    DpdkConfig config9;
+    DpdkPortConfig portA;
+    portA.port_id = 0;
+    portA.num_rx_queues = 4;
+    portA.num_tx_queues = 4;
+    portA.num_descriptors = 1024;
+    portA.mbuf_pool_size = 16384;
+    portA.mbuf_size = 2048;
+    config9.ports.push_back(portA);
+    
+    DpdkPortConfig portB;
+    portB.port_id = 1;
+    portB.num_rx_queues = 2;
+    portB.num_tx_queues = 2;
+    portB.num_descriptors = 512;
+    portB.mbuf_pool_size = 8192;
+    portB.mbuf_size = 9216;
+    config9.ports.push_back(portB);
+    TestCase("Valid - multiple ports with different IDs", ConfigValidator::Validate(config9).ok());
+    
+    // Test warning for low mbuf_pool_size (should still pass validation)
+    std::cout << "\n--- Testing warning for low mbuf_pool_size ---\n";
+    DpdkConfig config10;
+    DpdkPortConfig port10;
+    port10.port_id = 0;
+    port10.num_rx_queues = 4;
+    port10.num_tx_queues = 4;
+    port10.num_descriptors = 1024;
+    port10.mbuf_pool_size = 1000;  // Below recommended: 1024 * 8 + 512 = 8704
+    port10.mbuf_size = 2048;
+    config10.ports.push_back(port10);
+    TestCase("Valid but warns - low mbuf_pool_size", ConfigValidator::Validate(config10).ok());
+    std::cout << "--- End of warning test ---\n\n";
+  }
+
   // Test valid complete configuration
   {
     DpdkConfig config;

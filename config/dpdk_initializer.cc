@@ -5,6 +5,7 @@
 #include <rte_errno.h>
 
 #include "absl/strings/str_cat.h"
+#include "config/port_manager.h"
 
 namespace dpdk_config {
 
@@ -79,6 +80,28 @@ absl::Status DpdkInitializer::Initialize(const DpdkConfig& config,
 
   if (verbose) {
     std::cout << "DPDK initialization successful\n";
+  }
+
+  // Initialize ports if configured
+  if (!config.ports.empty()) {
+    PortManager port_manager;
+    
+    // Initialize all ports
+    absl::Status init_status = port_manager.InitializePorts(config.ports);
+    if (!init_status.ok()) {
+      return init_status;
+    }
+    
+    // Start all ports
+    absl::Status start_status = port_manager.StartAllPorts();
+    if (!start_status.ok()) {
+      return start_status;
+    }
+    
+    if (verbose) {
+      std::cout << "Successfully initialized and started " 
+                << port_manager.GetPortCount() << " port(s)\n";
+    }
   }
 
   return absl::OkStatus();

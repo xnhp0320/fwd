@@ -61,6 +61,10 @@ class ConfigValidator {
   //
   // Requirements: 4.4
   static bool IsValidLogLevel(int level);
+
+  // Check if a number is a power of 2.
+  // Used for validating num_descriptors in port configurations.
+  static bool IsPowerOfTwo(uint16_t n);
 };
 
 }  // namespace dpdk_config

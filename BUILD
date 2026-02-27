@@ -78,6 +78,35 @@ cc_library(
     ],
 )
 
+# DPDK port
+cc_library(
+    name = "dpdk_port",
+    srcs = ["config/dpdk_port.cc"],
+    hdrs = ["config/dpdk_port.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":dpdk_config",
+        ":dpdk_lib",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+    ],
+)
+
+# Port manager
+cc_library(
+    name = "port_manager",
+    srcs = ["config/port_manager.cc"],
+    hdrs = ["config/port_manager.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":dpdk_config",
+        ":dpdk_port",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/strings",
+    ],
+)
+
 # DPDK initializer
 cc_library(
     name = "dpdk_initializer",
@@ -87,6 +116,7 @@ cc_library(
     deps = [
         ":dpdk_config",
         ":dpdk_lib",
+        ":port_manager",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/strings",
     ],

@@ -127,11 +127,107 @@ absl::StatusOr<DpdkConfig> ConfigParser::ParseString(
     config.huge_pages = j["huge_pages"].get<int>();
   }
 
+  // Parse ports array (optional array of port configurations)
+  if (j.contains("ports")) {
+    if (!j["ports"].is_array()) {
+      return absl::InvalidArgumentError(
+          "Field 'ports' must be an array");
+    }
+    
+    for (const auto& port_json : j["ports"]) {
+      if (!port_json.is_object()) {
+        return absl::InvalidArgumentError(
+            "Each element in 'ports' array must be an object");
+      }
+      
+      DpdkPortConfig port_config;
+      
+      // Parse port_id (required)
+      if (!port_json.contains("port_id")) {
+        return absl::InvalidArgumentError(
+            "Port configuration missing required field: port_id");
+      }
+      if (!port_json["port_id"].is_number_unsigned()) {
+        return absl::InvalidArgumentError(
+            "Field 'port_id' must be an unsigned integer");
+      }
+      port_config.port_id = port_json["port_id"].get<uint16_t>();
+      
+      // Parse num_rx_queues (required)
+      if (!port_json.contains("num_rx_queues")) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("Port ", port_config.port_id, 
+                         " missing required field: num_rx_queues"));
+      }
+      if (!port_json["num_rx_queues"].is_number_unsigned()) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("Port ", port_config.port_id, 
+                         ": field 'num_rx_queues' must be an unsigned integer"));
+      }
+      port_config.num_rx_queues = port_json["num_rx_queues"].get<uint16_t>();
+      
+      // Parse num_tx_queues (required)
+      if (!port_json.contains("num_tx_queues")) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("Port ", port_config.port_id, 
+                         " missing required field: num_tx_queues"));
+      }
+      if (!port_json["num_tx_queues"].is_number_unsigned()) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("Port ", port_config.port_id, 
+                         ": field 'num_tx_queues' must be an unsigned integer"));
+      }
+      port_config.num_tx_queues = port_json["num_tx_queues"].get<uint16_t>();
+      
+      // Parse num_descriptors (required)
+      if (!port_json.contains("num_descriptors")) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("Port ", port_config.port_id, 
+                         " missing required field: num_descriptors"));
+      }
+      if (!port_json["num_descriptors"].is_number_unsigned()) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("Port ", port_config.port_id, 
+                         ": field 'num_descriptors' must be an unsigned integer"));
+      }
+      port_config.num_descriptors = port_json["num_descriptors"].get<uint16_t>();
+      
+      // Parse mbuf_pool_size (required)
+      if (!port_json.contains("mbuf_pool_size")) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("Port ", port_config.port_id, 
+                         " missing required field: mbuf_pool_size"));
+      }
+      if (!port_json["mbuf_pool_size"].is_number_unsigned()) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("Port ", port_config.port_id, 
+                         ": field 'mbuf_pool_size' must be an unsigned integer"));
+      }
+      port_config.mbuf_pool_size = port_json["mbuf_pool_size"].get<uint32_t>();
+      
+      // Parse mbuf_size (required)
+      if (!port_json.contains("mbuf_size")) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("Port ", port_config.port_id, 
+                         " missing required field: mbuf_size"));
+      }
+      if (!port_json["mbuf_size"].is_number_unsigned()) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("Port ", port_config.port_id, 
+                         ": field 'mbuf_size' must be an unsigned integer"));
+      }
+      port_config.mbuf_size = port_json["mbuf_size"].get<uint16_t>();
+      
+      // Add the parsed port configuration to the config
+      config.ports.push_back(port_config);
+    }
+  }
+
   // Parse additional_params (any other fields as key-value pairs)
   // Skip the known fields we've already processed
   const std::set<std::string> known_fields = {
       "core_mask", "memory_channels", "pci_allowlist",
-      "pci_blocklist", "log_level", "huge_pages"
+      "pci_blocklist", "log_level", "huge_pages", "ports"
   };
 
   for (auto it = j.begin(); it != j.end(); ++it) {

@@ -1,12 +1,36 @@
 #ifndef CONFIG_DPDK_CONFIG_H_
 #define CONFIG_DPDK_CONFIG_H_
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace dpdk_config {
+
+// Port configuration structure for DPDK port initialization
+struct DpdkPortConfig {
+  // Port ID (required, must be unique)
+  uint16_t port_id;
+  
+  // Number of RX queues (required, must be > 0)
+  uint16_t num_rx_queues;
+  
+  // Number of TX queues (required, must be > 0)
+  uint16_t num_tx_queues;
+  
+  // Number of descriptors per RX/TX queue (required, must be power of 2)
+  uint16_t num_descriptors;
+  
+  // Mbuf pool size - total number of mbufs in the pool (required, must be > 0)
+  uint32_t mbuf_pool_size;
+  
+  // Mbuf size - data room size for packet buffers (required, must be > 0)
+  // Common values: 2048 (standard Ethernet), 9216 (jumbo frames)
+  // Should be set to maximum expected packet size
+  uint16_t mbuf_size;
+};
 
 // Configuration structure for DPDK EAL initialization parameters.
 // All fields are optional to support flexible configuration files.
@@ -36,6 +60,9 @@ struct DpdkConfig {
   // Number of huge pages to use (positive integer)
   // Reserved for future use or custom handling
   std::optional<int> huge_pages;
+
+  // Port configurations
+  std::vector<DpdkPortConfig> ports;
 
   // Additional EAL parameters as key-value pairs for extensibility
   // Allows passing arbitrary parameters not explicitly defined above

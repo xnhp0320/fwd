@@ -1,7 +1,9 @@
 #include "config/config_validator.h"
 
 #include <algorithm>
+#include <iostream>
 #include <regex>
+#include <unordered_set>
 
 #include "absl/strings/str_cat.h"
 
@@ -48,6 +50,13 @@ bool ConfigValidator::IsValidPciAddress(const std::string& pci_addr) {
 
 bool ConfigValidator::IsValidLogLevel(int level) {
   return level >= 0 && level <= 8;
+}
+
+bool ConfigValidator::IsPowerOfTwo(uint16_t n) {
+  // A number is a power of 2 if it has exactly one bit set
+  // n & (n-1) clears the lowest set bit, so it's 0 only for powers of 2
+  // Also check n > 0 to exclude 0
+  return n > 0 && (n & (n - 1)) == 0;
 }
 
 absl::Status ConfigValidator::Validate(const DpdkConfig& config) {
@@ -102,6 +111,61 @@ absl::Status ConfigValidator::Validate(const DpdkConfig& config) {
   if (config.huge_pages.has_value()) {
     if (*config.huge_pages <= 0) {
       return absl::InvalidArgumentError("huge_pages must be positive");
+    }
+  }
+
+  // Validate port configurations
+  std::unordered_set<uint16_t> seen_port_ids;
+  
+  for (const auto& port : config.ports) {
+    // Check for duplicate port IDs
+    if (seen_port_ids.count(port.port_id) > 0) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Duplicate port_id: ", port.port_id));
+    }
+    seen_port_ids.insert(port.port_id);
+    
+    // Validate num_rx_queues
+    if (port.num_rx_queues == 0) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Port ", port.port_id, ": num_rx_queues must be > 0"));
+    }
+    
+    // Validate num_tx_queues
+    if (port.num_tx_queues == 0) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Port ", port.port_id, ": num_tx_queues must be > 0"));
+    }
+    
+    // Validate num_descriptors is power of 2
+    if (!IsPowerOfTwo(port.num_descriptors)) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Port ", port.port_id, 
+                       ": num_descriptors must be a power of 2"));
+    }
+    
+    // Validate mbuf_pool_size
+    if (port.mbuf_pool_size == 0) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Port ", port.port_id, ": mbuf_pool_size must be > 0"));
+    }
+    
+    // Recommend minimum pool size accounting for per-core caches
+    // Formula: descriptors × queues + cache headroom (512 = ~2 cores × 256 cache)
+    uint32_t min_recommended = port.num_descriptors * 
+                               (port.num_rx_queues + port.num_tx_queues) + 512;
+    if (port.mbuf_pool_size < min_recommended) {
+      // This is a warning, not an error - log but don't fail validation
+      std::cerr << "Warning: Port " << port.port_id 
+                << " mbuf_pool_size (" << port.mbuf_pool_size 
+                << ") is below recommended minimum (" << min_recommended
+                << "). Consider increasing to account for per-core caches.\n";
+    }
+    
+    // Validate mbuf_size
+    if (port.mbuf_size == 0) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Port ", port.port_id, ": mbuf_size must be > 0"));
     }
   }
 
