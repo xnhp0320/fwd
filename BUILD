@@ -1,4 +1,4 @@
-load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 
 cc_library(
     name = "dpdk_lib",
@@ -11,117 +11,6 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
-# Configuration data structures (header-only)
-cc_library(
-    name = "dpdk_config",
-    hdrs = ["config/dpdk_config.h"],
-    visibility = ["//visibility:public"],
-)
-
-# JSON configuration parser
-cc_library(
-    name = "config_parser",
-    srcs = ["config/config_parser.cc"],
-    hdrs = ["config/config_parser.h"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":dpdk_config",
-        "@abseil-cpp//absl/status:statusor",
-        "@abseil-cpp//absl/strings",
-        "@nlohmann_json//:json",
-    ],
-)
-
-# Configuration validator
-cc_library(
-    name = "config_validator",
-    srcs = ["config/config_validator.cc"],
-    hdrs = ["config/config_validator.h"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":dpdk_config",
-        "@abseil-cpp//absl/status",
-        "@abseil-cpp//absl/strings",
-    ],
-)
-
-# Configuration validator test
-cc_test(
-    name = "config_validator_test",
-    srcs = ["config/config_validator_test.cc"],
-    deps = [
-        ":config_validator",
-        ":dpdk_config",
-    ],
-)
-
-# Configuration printer test
-cc_test(
-    name = "config_printer_test",
-    srcs = ["config/config_printer_test.cc"],
-    deps = [
-        ":config_parser",
-        ":config_printer",
-        ":dpdk_config",
-    ],
-)
-
-# Configuration printer
-cc_library(
-    name = "config_printer",
-    srcs = ["config/config_printer.cc"],
-    hdrs = ["config/config_printer.h"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":dpdk_config",
-        "@nlohmann_json//:json",
-    ],
-)
-
-# DPDK port
-cc_library(
-    name = "dpdk_port",
-    srcs = ["config/dpdk_port.cc"],
-    hdrs = ["config/dpdk_port.h"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":dpdk_config",
-        ":dpdk_lib",
-        "@abseil-cpp//absl/status",
-        "@abseil-cpp//absl/status:statusor",
-        "@abseil-cpp//absl/strings",
-    ],
-)
-
-# Port manager
-cc_library(
-    name = "port_manager",
-    srcs = ["config/port_manager.cc"],
-    hdrs = ["config/port_manager.h"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":dpdk_config",
-        ":dpdk_port",
-        "@abseil-cpp//absl/status",
-        "@abseil-cpp//absl/strings",
-    ],
-)
-
-# DPDK initializer
-cc_library(
-    name = "dpdk_initializer",
-    srcs = ["config/dpdk_initializer.cc"],
-    hdrs = ["config/dpdk_initializer.h"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":dpdk_config",
-        ":dpdk_lib",
-        ":port_manager",
-        "@abseil-cpp//absl/status",
-        "@abseil-cpp//absl/strings",
-    ],
-)
-
 # Original hello_world binary
 cc_binary(
     name = "main",
@@ -131,14 +20,27 @@ cc_binary(
         "-latomic",
     ],
     deps = [
-        ":config_parser",
-        ":config_printer",
-        ":config_validator",
-        ":dpdk_initializer",
         ":dpdk_lib",
+        "//config:config_parser",
+        "//config:config_printer",
+        "//config:config_validator",
+        "//config:dpdk_initializer",
         "@abseil-cpp//absl/flags:flag",
         "@abseil-cpp//absl/flags:parse",
         "@abseil-cpp//absl/strings",
         "@boost.asio",
+    ],
+)
+
+# Verification binary for dpdk.json integration test
+cc_binary(
+    name = "verify_dpdk_json",
+    srcs = ["verify_dpdk_json.cc"],
+    data = ["dpdk.json"],
+    deps = [
+        "//config:config_parser",
+        "//config:config_printer",
+        "//config:config_validator",
+        "//config:dpdk_config",
     ],
 )

@@ -170,6 +170,150 @@ int main() {
              json.find("\"another_param\"") != std::string::npos);
   }
 
+  // Test 12: PMD threads serialization - empty pmd_threads
+  {
+    DpdkConfig config;
+    config.core_mask = "0xff";
+    std::string json = ConfigPrinter::ToJson(config);
+    TestCase("Empty pmd_threads not serialized",
+             json.find("\"pmd_threads\"") == std::string::npos);
+  }
+
+  // Test 13: PMD threads serialization - single thread with queues
+  {
+    DpdkConfig config;
+    PmdThreadConfig pmd;
+    pmd.lcore_id = 1;
+    
+    QueueAssignment rx_queue1{0, 0};
+    QueueAssignment rx_queue2{0, 1};
+    pmd.rx_queues.push_back(rx_queue1);
+    pmd.rx_queues.push_back(rx_queue2);
+    
+    QueueAssignment tx_queue1{0, 0};
+    pmd.tx_queues.push_back(tx_queue1);
+    
+    config.pmd_threads.push_back(pmd);
+    
+    std::string json = ConfigPrinter::ToJson(config);
+    TestCase("PMD thread with queues serialized correctly",
+             json.find("\"pmd_threads\"") != std::string::npos &&
+             json.find("\"lcore_id\"") != std::string::npos &&
+             json.find("\"rx_queues\"") != std::string::npos &&
+             json.find("\"tx_queues\"") != std::string::npos &&
+             json.find("\"port_id\"") != std::string::npos &&
+             json.find("\"queue_id\"") != std::string::npos);
+  }
+
+  // Test 14: PMD threads serialization - multiple threads
+  {
+    DpdkConfig config;
+    
+    PmdThreadConfig pmd1;
+    pmd1.lcore_id = 1;
+    QueueAssignment rx1{0, 0};
+    pmd1.rx_queues.push_back(rx1);
+    
+    PmdThreadConfig pmd2;
+    pmd2.lcore_id = 2;
+    QueueAssignment rx2{1, 0};
+    pmd2.rx_queues.push_back(rx2);
+    
+    config.pmd_threads.push_back(pmd1);
+    config.pmd_threads.push_back(pmd2);
+    
+    std::string json = ConfigPrinter::ToJson(config);
+    TestCase("Multiple PMD threads serialized correctly",
+             json.find("\"pmd_threads\"") != std::string::npos &&
+             json.find("1") != std::string::npos &&
+             json.find("2") != std::string::npos);
+  }
+
+  // Test 15: PMD threads serialization - thread with empty queues
+  {
+    DpdkConfig config;
+    PmdThreadConfig pmd;
+    pmd.lcore_id = 1;
+    // No queues added
+    
+    config.pmd_threads.push_back(pmd);
+    
+    std::string json = ConfigPrinter::ToJson(config);
+    TestCase("PMD thread with empty queues omits queue arrays",
+             json.find("\"pmd_threads\"") != std::string::npos &&
+             json.find("\"lcore_id\"") != std::string::npos &&
+             json.find("\"rx_queues\"") == std::string::npos &&
+             json.find("\"tx_queues\"") == std::string::npos);
+  }
+
+  // Test 16: PMD threads round-trip test
+  {
+    std::string original_json = R"({
+  "core_mask": "0xff",
+  "pmd_threads": [
+    {
+      "lcore_id": 1,
+      "rx_queues": [
+        {"port_id": 0, "queue_id": 0},
+        {"port_id": 0, "queue_id": 1}
+      ],
+      "tx_queues": [
+        {"port_id": 0, "queue_id": 0}
+      ]
+    },
+    {
+      "lcore_id": 2,
+      "rx_queues": [
+        {"port_id": 1, "queue_id": 0}
+      ],
+      "tx_queues": [
+        {"port_id": 1, "queue_id": 0}
+      ]
+    }
+  ]
+})";
+    
+    auto config_or = ConfigParser::ParseString(original_json);
+    if (!config_or.ok()) {
+      TestCase("PMD threads round-trip: parse original", false);
+    } else {
+      std::string printed_json = ConfigPrinter::ToJson(*config_or);
+      auto config2_or = ConfigParser::ParseString(printed_json);
+      
+      if (!config2_or.ok()) {
+        TestCase("PMD threads round-trip: parse printed", false);
+      } else {
+        // Compare PMD thread configurations
+        bool same = config_or->pmd_threads.size() == config2_or->pmd_threads.size();
+        
+        if (same && config_or->pmd_threads.size() == 2) {
+          const auto& pmd1_orig = config_or->pmd_threads[0];
+          const auto& pmd1_new = config2_or->pmd_threads[0];
+          const auto& pmd2_orig = config_or->pmd_threads[1];
+          const auto& pmd2_new = config2_or->pmd_threads[1];
+          
+          same = same && 
+            pmd1_orig.lcore_id == pmd1_new.lcore_id &&
+            pmd1_orig.rx_queues.size() == pmd1_new.rx_queues.size() &&
+            pmd1_orig.tx_queues.size() == pmd1_new.tx_queues.size() &&
+            pmd2_orig.lcore_id == pmd2_new.lcore_id &&
+            pmd2_orig.rx_queues.size() == pmd2_new.rx_queues.size() &&
+            pmd2_orig.tx_queues.size() == pmd2_new.tx_queues.size();
+          
+          if (same && pmd1_orig.rx_queues.size() == 2) {
+            same = same &&
+              pmd1_orig.rx_queues[0].port_id == pmd1_new.rx_queues[0].port_id &&
+              pmd1_orig.rx_queues[0].queue_id == pmd1_new.rx_queues[0].queue_id &&
+              pmd1_orig.rx_queues[1].port_id == pmd1_new.rx_queues[1].port_id &&
+              pmd1_orig.rx_queues[1].queue_id == pmd1_new.rx_queues[1].queue_id;
+          }
+        }
+        
+        TestCase("PMD threads round-trip: parse -> print -> parse preserves data", same);
+      }
+    }
+  }
+
   std::cout << "\nAll tests completed.\n";
   return failed_tests > 0 ? 1 : 0;
 }

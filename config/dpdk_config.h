@@ -9,6 +9,26 @@
 
 namespace dpdk_config {
 
+// Queue assignment structure for PMD thread configuration
+// Represents a single (port, queue) pair assignment
+struct QueueAssignment {
+  uint16_t port_id;
+  uint16_t queue_id;
+};
+
+// PMD thread configuration structure
+// Represents the configuration for a single PMD thread
+struct PmdThreadConfig {
+  // The lcore (CPU core) on which the PMD thread runs
+  uint32_t lcore_id;
+  
+  // List of RX queue assignments for this PMD thread
+  std::vector<QueueAssignment> rx_queues;
+  
+  // List of TX queue assignments for this PMD thread
+  std::vector<QueueAssignment> tx_queues;
+};
+
 // Port configuration structure for DPDK port initialization
 struct DpdkPortConfig {
   // Port ID (required, must be unique)
@@ -63,6 +83,9 @@ struct DpdkConfig {
 
   // Port configurations
   std::vector<DpdkPortConfig> ports;
+
+  // PMD thread configurations
+  std::vector<PmdThreadConfig> pmd_threads;
 
   // Additional EAL parameters as key-value pairs for extensibility
   // Allows passing arbitrary parameters not explicitly defined above

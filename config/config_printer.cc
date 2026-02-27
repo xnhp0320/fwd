@@ -58,6 +58,44 @@ std::string ConfigPrinter::ToJson(const DpdkConfig& config, int indent) {
     j["ports"] = ports_array;
   }
 
+  // Serialize pmd_threads (array of PMD thread configurations)
+  if (!config.pmd_threads.empty()) {
+    json pmd_threads_array = json::array();
+    
+    for (const auto& pmd_config : config.pmd_threads) {
+      json thread_json;
+      thread_json["lcore_id"] = pmd_config.lcore_id;
+      
+      // Serialize rx_queues (skip if empty)
+      if (!pmd_config.rx_queues.empty()) {
+        json rx_queues_array = json::array();
+        for (const auto& queue : pmd_config.rx_queues) {
+          json queue_json;
+          queue_json["port_id"] = queue.port_id;
+          queue_json["queue_id"] = queue.queue_id;
+          rx_queues_array.push_back(queue_json);
+        }
+        thread_json["rx_queues"] = rx_queues_array;
+      }
+      
+      // Serialize tx_queues (skip if empty)
+      if (!pmd_config.tx_queues.empty()) {
+        json tx_queues_array = json::array();
+        for (const auto& queue : pmd_config.tx_queues) {
+          json queue_json;
+          queue_json["port_id"] = queue.port_id;
+          queue_json["queue_id"] = queue.queue_id;
+          tx_queues_array.push_back(queue_json);
+        }
+        thread_json["tx_queues"] = tx_queues_array;
+      }
+      
+      pmd_threads_array.push_back(thread_json);
+    }
+    
+    j["pmd_threads"] = pmd_threads_array;
+  }
+
   // Serialize additional_params (key-value pairs)
   for (const auto& [key, value] : config.additional_params) {
     // Try to parse value as JSON to preserve original type

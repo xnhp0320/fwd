@@ -1,5 +1,65 @@
 {
-  "core_mask": "0x01",
+  "core_mask": "0xff",
   "log_level": 7,
-  "memory_channels": 4
+  "memory_channels": 4,
+  "ports": [
+    {
+      "port_id": 0,
+      "num_rx_queues": 4,
+      "num_tx_queues": 4,
+      "num_descriptors": 1024,
+      "mbuf_pool_size": 8192,
+      "mbuf_size": 2048
+    },
+    {
+      "port_id": 1,
+      "num_rx_queues": 2,
+      "num_tx_queues": 2,
+      "num_descriptors": 1024,
+      "mbuf_pool_size": 8192,
+      "mbuf_size": 2048
+    }
+  ],
+  "pmd_threads": [
+    {
+      "lcore_id": 1,
+      "rx_queues": [
+        {"port_id": 0, "queue_id": 0},
+        {"port_id": 0, "queue_id": 1}
+      ],
+      "tx_queues": [
+        {"port_id": 0, "queue_id": 0},
+        {"port_id": 0, "queue_id": 1}
+      ]
+    },
+    {
+      "lcore_id": 2,
+      "rx_queues": [
+        {"port_id": 0, "queue_id": 2},
+        {"port_id": 0, "queue_id": 3}
+      ],
+      "tx_queues": [
+        {"port_id": 0, "queue_id": 2},
+        {"port_id": 0, "queue_id": 3}
+      ]
+    },
+    {
+      "lcore_id": 3,
+      "rx_queues": [
+        {"port_id": 1, "queue_id": 0}
+      ],
+      "tx_queues": [
+        {"port_id": 1, "queue_id": 0}
+      ]
+    },
+    {
+      "lcore_id": 4,
+      "rx_queues": [
+        {"port_id": 1, "queue_id": 1}
+      ],
+      "tx_queues": [
+        {"port_id": 1, "queue_id": 1}
+      ]
+    }
+  ]
 }

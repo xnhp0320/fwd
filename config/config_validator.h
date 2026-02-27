@@ -2,6 +2,7 @@
 #define CONFIG_CONFIG_VALIDATOR_H_
 
 #include <string>
+#include <unordered_set>
 
 #include "absl/status/status.h"
 #include "config/dpdk_config.h"
@@ -39,6 +40,27 @@ class ConfigValidator {
   // Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7
   static absl::Status Validate(const DpdkConfig& config);
 
+  // Parse a hexadecimal coremask string and extract available lcore IDs.
+  // Accepts optional "0x" or "0X" prefix.
+  // Supports up to 64-bit masks (lcores 0-63).
+  // Returns a set of lcore IDs corresponding to set bits in the mask.
+  //
+  // Example: "0xff" returns {0, 1, 2, 3, 4, 5, 6, 7}
+  //
+  // Requirements: 2.2, 7.1
+  static std::unordered_set<uint32_t> ParseCoremask(
+      const std::optional<std::string>& core_mask);
+
+  // Determine the main lcore from a coremask.
+  // Returns the lowest-numbered lcore from the coremask.
+  // If the coremask is empty or missing, returns 0 as the default.
+  //
+  // Example: "0xff" returns 0, "0x06" returns 1
+  //
+  // Requirements: 2.1, 7.1, 7.2
+  static uint32_t DetermineMainLcore(
+      const std::optional<std::string>& core_mask);
+
  private:
   // Validate that a string is a valid hexadecimal string.
   // Accepts optional "0x" or "0X" prefix.
@@ -65,6 +87,14 @@ class ConfigValidator {
   // Check if a number is a power of 2.
   // Used for validating num_descriptors in port configurations.
   static bool IsPowerOfTwo(uint16_t n);
+
+  // Find a port configuration by port_id.
+  // Searches the ports vector for a matching port_id.
+  // Returns a pointer to the port config if found, nullptr otherwise.
+  //
+  // Requirements: 2.6
+  static const DpdkPortConfig* FindPort(
+      const std::vector<DpdkPortConfig>& ports, uint16_t port_id);
 };
 
 }  // namespace dpdk_config

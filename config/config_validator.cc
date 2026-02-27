@@ -1,6 +1,7 @@
 #include "config/config_validator.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <iostream>
 #include <regex>
 #include <unordered_set>
@@ -8,6 +9,18 @@
 #include "absl/strings/str_cat.h"
 
 namespace dpdk_config {
+
+// Hash function for std::pair to use in unordered_set
+template <typename T1, typename T2>
+struct PairHash {
+  std::size_t operator()(const std::pair<T1, T2>& p) const {
+    auto h1 = std::hash<T1>{}(p.first);
+    auto h2 = std::hash<T2>{}(p.second);
+    // Combine hashes using a simple XOR with bit shift
+    return h1 ^ (h2 << 1);
+  }
+};
+
 
 bool ConfigValidator::IsValidHexString(const std::string& hex) {
   if (hex.empty()) {
@@ -57,6 +70,62 @@ bool ConfigValidator::IsPowerOfTwo(uint16_t n) {
   // n & (n-1) clears the lowest set bit, so it's 0 only for powers of 2
   // Also check n > 0 to exclude 0
   return n > 0 && (n & (n - 1)) == 0;
+}
+
+std::unordered_set<uint32_t> ConfigValidator::ParseCoremask(
+    const std::optional<std::string>& core_mask) {
+  std::unordered_set<uint32_t> lcores;
+  
+  // Return empty set if core_mask is not provided
+  if (!core_mask.has_value() || core_mask->empty()) {
+    return lcores;
+  }
+  
+  std::string hex_str = *core_mask;
+  
+  // Remove 0x or 0X prefix if present
+  if (hex_str.size() >= 2 && hex_str[0] == '0' && 
+      (hex_str[1] == 'x' || hex_str[1] == 'X')) {
+    hex_str = hex_str.substr(2);
+  }
+  
+  // Convert hex string to 64-bit integer
+  // Use strtoull for 64-bit support
+  char* end_ptr;
+  uint64_t mask_value = std::strtoull(hex_str.c_str(), &end_ptr, 16);
+  
+  // Extract bit positions (lcore IDs) from the mask
+  for (uint32_t bit_position = 0; bit_position < 64; ++bit_position) {
+    if ((mask_value & (1ULL << bit_position)) != 0) {
+      lcores.insert(bit_position);
+    }
+  }
+  
+  return lcores;
+}
+
+uint32_t ConfigValidator::DetermineMainLcore(
+    const std::optional<std::string>& core_mask) {
+  // Parse the coremask to get available lcores
+  std::unordered_set<uint32_t> lcores = ParseCoremask(core_mask);
+  
+  // If no lcores are available, return 0 as default
+  if (lcores.empty()) {
+    return 0;
+  }
+  
+  // Return the lowest-numbered lcore (main lcore)
+  return *std::min_element(lcores.begin(), lcores.end());
+}
+
+const DpdkPortConfig* ConfigValidator::FindPort(
+    const std::vector<DpdkPortConfig>& ports, uint16_t port_id) {
+  for (const auto& port : ports) {
+    if (port.port_id == port_id) {
+      return &port;
+    }
+  }
+  return nullptr;
 }
 
 absl::Status ConfigValidator::Validate(const DpdkConfig& config) {
@@ -111,6 +180,129 @@ absl::Status ConfigValidator::Validate(const DpdkConfig& config) {
   if (config.huge_pages.has_value()) {
     if (*config.huge_pages <= 0) {
       return absl::InvalidArgumentError("huge_pages must be positive");
+    }
+  }
+
+  // Validate PMD thread configurations
+  if (!config.pmd_threads.empty()) {
+    // Get available lcores from coremask
+    std::unordered_set<uint32_t> available_lcores = ParseCoremask(config.core_mask);
+    
+    // Determine main lcore
+    uint32_t main_lcore = DetermineMainLcore(config.core_mask);
+    
+    // Check if there are worker lcores available (lcores other than main lcore)
+    std::unordered_set<uint32_t> worker_lcores;
+    for (uint32_t lcore : available_lcores) {
+      if (lcore != main_lcore) {
+        worker_lcores.insert(lcore);
+      }
+    }
+    
+    if (worker_lcores.empty()) {
+      return absl::InvalidArgumentError(
+          "No worker lcores available (coremask only contains main lcore)");
+    }
+    
+    // Validate lcore assignments for each PMD thread
+    std::unordered_set<uint32_t> seen_lcores;
+    
+    for (const auto& pmd_config : config.pmd_threads) {
+      uint32_t lcore = pmd_config.lcore_id;
+      
+      // Check if lcore is the main lcore
+      if (lcore == main_lcore) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("PMD thread cannot use main lcore ", lcore, 
+                         " (reserved for control plane)"));
+      }
+      
+      // Check if lcore is in coremask
+      if (available_lcores.find(lcore) == available_lcores.end()) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("PMD thread lcore ", lcore, " is not in coremask"));
+      }
+      
+      // Check for duplicate lcore assignments
+      if (seen_lcores.count(lcore) > 0) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("Duplicate lcore assignment: ", lcore));
+      }
+      seen_lcores.insert(lcore);
+    }
+    
+    // Validate RX queue assignments
+    std::unordered_set<std::pair<uint16_t, uint16_t>, 
+                       PairHash<uint16_t, uint16_t>> seen_rx_queues;
+    
+    for (const auto& pmd_config : config.pmd_threads) {
+      uint32_t lcore = pmd_config.lcore_id;
+      
+      for (const auto& queue : pmd_config.rx_queues) {
+        // Check if port exists
+        const DpdkPortConfig* port = FindPort(config.ports, queue.port_id);
+        if (port == nullptr) {
+          return absl::InvalidArgumentError(
+              absl::StrCat("PMD thread on lcore ", lcore, 
+                           ": unknown port ", queue.port_id));
+        }
+        
+        // Check if queue_id is within range
+        if (queue.queue_id >= port->num_rx_queues) {
+          return absl::InvalidArgumentError(
+              absl::StrCat("PMD thread on lcore ", lcore, 
+                           ": RX queue ", queue.queue_id, 
+                           " out of range for port ", queue.port_id,
+                           " (max: ", port->num_rx_queues - 1, ")"));
+        }
+        
+        // Check for duplicate queue assignments
+        std::pair<uint16_t, uint16_t> queue_pair = 
+            std::make_pair(queue.port_id, queue.queue_id);
+        if (seen_rx_queues.count(queue_pair) > 0) {
+          return absl::InvalidArgumentError(
+              absl::StrCat("Duplicate RX queue assignment: port ", 
+                           queue.port_id, ", queue ", queue.queue_id));
+        }
+        seen_rx_queues.insert(queue_pair);
+      }
+    }
+    
+    // Validate TX queue assignments
+    std::unordered_set<std::pair<uint16_t, uint16_t>, 
+                       PairHash<uint16_t, uint16_t>> seen_tx_queues;
+    
+    for (const auto& pmd_config : config.pmd_threads) {
+      uint32_t lcore = pmd_config.lcore_id;
+      
+      for (const auto& queue : pmd_config.tx_queues) {
+        // Check if port exists
+        const DpdkPortConfig* port = FindPort(config.ports, queue.port_id);
+        if (port == nullptr) {
+          return absl::InvalidArgumentError(
+              absl::StrCat("PMD thread on lcore ", lcore, 
+                           ": unknown port ", queue.port_id));
+        }
+        
+        // Check if queue_id is within range
+        if (queue.queue_id >= port->num_tx_queues) {
+          return absl::InvalidArgumentError(
+              absl::StrCat("PMD thread on lcore ", lcore, 
+                           ": TX queue ", queue.queue_id, 
+                           " out of range for port ", queue.port_id,
+                           " (max: ", port->num_tx_queues - 1, ")"));
+        }
+        
+        // Check for duplicate queue assignments
+        std::pair<uint16_t, uint16_t> queue_pair = 
+            std::make_pair(queue.port_id, queue.queue_id);
+        if (seen_tx_queues.count(queue_pair) > 0) {
+          return absl::InvalidArgumentError(
+              absl::StrCat("Duplicate TX queue assignment: port ", 
+                           queue.port_id, ", queue ", queue.queue_id));
+        }
+        seen_tx_queues.insert(queue_pair);
+      }
     }
   }
 

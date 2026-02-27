@@ -223,11 +223,135 @@ absl::StatusOr<DpdkConfig> ConfigParser::ParseString(
     }
   }
 
+  // Parse pmd_threads array (optional array of PMD thread configurations)
+  if (j.contains("pmd_threads")) {
+    if (!j["pmd_threads"].is_array()) {
+      return absl::InvalidArgumentError(
+          "Field 'pmd_threads' must be an array");
+    }
+    
+    for (const auto& thread_json : j["pmd_threads"]) {
+      if (!thread_json.is_object()) {
+        return absl::InvalidArgumentError(
+            "Each element in 'pmd_threads' must be an object");
+      }
+      
+      PmdThreadConfig pmd_config;
+      
+      // Parse lcore_id (required)
+      if (!thread_json.contains("lcore_id")) {
+        return absl::InvalidArgumentError(
+            "PMD thread missing required field: lcore_id");
+      }
+      if (!thread_json["lcore_id"].is_number_unsigned()) {
+        return absl::InvalidArgumentError(
+            "Field 'lcore_id' must be an unsigned integer");
+      }
+      pmd_config.lcore_id = thread_json["lcore_id"].get<uint32_t>();
+      
+      // Parse rx_queues (optional array)
+      if (thread_json.contains("rx_queues")) {
+        if (!thread_json["rx_queues"].is_array()) {
+          return absl::InvalidArgumentError(
+              absl::StrCat("PMD thread on lcore ", pmd_config.lcore_id,
+                           ": field 'rx_queues' must be an array"));
+        }
+        
+        for (const auto& queue_json : thread_json["rx_queues"]) {
+          if (!queue_json.is_object()) {
+            return absl::InvalidArgumentError(
+                absl::StrCat("PMD thread on lcore ", pmd_config.lcore_id,
+                             ": each element in 'rx_queues' must be an object"));
+          }
+          
+          QueueAssignment queue;
+          
+          // Parse port_id (required)
+          if (!queue_json.contains("port_id")) {
+            return absl::InvalidArgumentError(
+                absl::StrCat("Queue assignment for lcore ", pmd_config.lcore_id,
+                             " missing required field: port_id"));
+          }
+          if (!queue_json["port_id"].is_number_unsigned()) {
+            return absl::InvalidArgumentError(
+                absl::StrCat("Queue assignment for lcore ", pmd_config.lcore_id,
+                             ": field 'port_id' must be an unsigned integer"));
+          }
+          queue.port_id = queue_json["port_id"].get<uint16_t>();
+          
+          // Parse queue_id (required)
+          if (!queue_json.contains("queue_id")) {
+            return absl::InvalidArgumentError(
+                absl::StrCat("Queue assignment for lcore ", pmd_config.lcore_id,
+                             " missing required field: queue_id"));
+          }
+          if (!queue_json["queue_id"].is_number_unsigned()) {
+            return absl::InvalidArgumentError(
+                absl::StrCat("Queue assignment for lcore ", pmd_config.lcore_id,
+                             ": field 'queue_id' must be an unsigned integer"));
+          }
+          queue.queue_id = queue_json["queue_id"].get<uint16_t>();
+          
+          pmd_config.rx_queues.push_back(queue);
+        }
+      }
+      
+      // Parse tx_queues (optional array)
+      if (thread_json.contains("tx_queues")) {
+        if (!thread_json["tx_queues"].is_array()) {
+          return absl::InvalidArgumentError(
+              absl::StrCat("PMD thread on lcore ", pmd_config.lcore_id,
+                           ": field 'tx_queues' must be an array"));
+        }
+        
+        for (const auto& queue_json : thread_json["tx_queues"]) {
+          if (!queue_json.is_object()) {
+            return absl::InvalidArgumentError(
+                absl::StrCat("PMD thread on lcore ", pmd_config.lcore_id,
+                             ": each element in 'tx_queues' must be an object"));
+          }
+          
+          QueueAssignment queue;
+          
+          // Parse port_id (required)
+          if (!queue_json.contains("port_id")) {
+            return absl::InvalidArgumentError(
+                absl::StrCat("Queue assignment for lcore ", pmd_config.lcore_id,
+                             " missing required field: port_id"));
+          }
+          if (!queue_json["port_id"].is_number_unsigned()) {
+            return absl::InvalidArgumentError(
+                absl::StrCat("Queue assignment for lcore ", pmd_config.lcore_id,
+                             ": field 'port_id' must be an unsigned integer"));
+          }
+          queue.port_id = queue_json["port_id"].get<uint16_t>();
+          
+          // Parse queue_id (required)
+          if (!queue_json.contains("queue_id")) {
+            return absl::InvalidArgumentError(
+                absl::StrCat("Queue assignment for lcore ", pmd_config.lcore_id,
+                             " missing required field: queue_id"));
+          }
+          if (!queue_json["queue_id"].is_number_unsigned()) {
+            return absl::InvalidArgumentError(
+                absl::StrCat("Queue assignment for lcore ", pmd_config.lcore_id,
+                             ": field 'queue_id' must be an unsigned integer"));
+          }
+          queue.queue_id = queue_json["queue_id"].get<uint16_t>();
+          
+          pmd_config.tx_queues.push_back(queue);
+        }
+      }
+      
+      config.pmd_threads.push_back(pmd_config);
+    }
+  }
+
   // Parse additional_params (any other fields as key-value pairs)
   // Skip the known fields we've already processed
   const std::set<std::string> known_fields = {
       "core_mask", "memory_channels", "pci_allowlist",
-      "pci_blocklist", "log_level", "huge_pages", "ports"
+      "pci_blocklist", "log_level", "huge_pages", "ports", "pmd_threads"
   };
 
   for (auto it = j.begin(); it != j.end(); ++it) {
