@@ -25,6 +25,7 @@ cc_binary(
         "//config:config_printer",
         "//config:config_validator",
         "//config:dpdk_initializer",
+        "//config:pmd_thread_manager",
         "@abseil-cpp//absl/flags:flag",
         "@abseil-cpp//absl/flags:parse",
         "@abseil-cpp//absl/strings",
