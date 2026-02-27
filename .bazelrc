@@ -1,0 +1,2 @@
+common --spawn_strategy=local
+common --repo_env=BAZEL_CONLYOPTS="-std=gnu17"

@@ -1,0 +1,5 @@
+{
+  "core_mask": "0x01",
+  "log_level": 7,
+  "memory_channels": 4
+}
