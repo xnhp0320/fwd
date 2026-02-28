@@ -5,6 +5,7 @@
 #include <rte_errno.h>
 
 #include "absl/strings/str_cat.h"
+#include "config/pmd_thread_manager.h"
 #include "config/port_manager.h"
 
 namespace dpdk_config {
@@ -46,12 +47,19 @@ std::vector<std::string> DpdkInitializer::BuildArguments(
     args.push_back(std::to_string(*config.log_level));
   }
 
+  // Add additional parameters
+  for (const auto& [key, value] : config.additional_params) {
+    args.push_back(key);
+    if (!value.empty()) {
+      args.push_back(value);
+    }
+  }
+
   return args;
 }
 
-absl::Status DpdkInitializer::Initialize(const DpdkConfig& config,
-                                          const std::string& program_name,
-                                          bool verbose) {
+absl::StatusOr<std::unique_ptr<PMDThreadManager>> DpdkInitializer::Initialize(
+    const DpdkConfig& config, const std::string& program_name, bool verbose) {
   // Build argument vector
   std::vector<std::string> args = BuildArguments(config, program_name);
 
@@ -104,7 +112,17 @@ absl::Status DpdkInitializer::Initialize(const DpdkConfig& config,
     }
   }
 
-  return absl::OkStatus();
+  // Create PMDThreadManager and launch threads if configured
+  auto thread_manager = std::make_unique<PMDThreadManager>();
+  
+  if (!config.pmd_threads.empty()) {
+    absl::Status launch_status = thread_manager->LaunchThreads(config.pmd_threads, verbose);
+    if (!launch_status.ok()) {
+      return launch_status;
+    }
+  }
+
+  return thread_manager;
 }
 
 }  // namespace dpdk_config

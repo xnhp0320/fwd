@@ -96,15 +96,24 @@ std::string ConfigPrinter::ToJson(const DpdkConfig& config, int indent) {
     j["pmd_threads"] = pmd_threads_array;
   }
 
-  // Serialize additional_params (key-value pairs)
-  for (const auto& [key, value] : config.additional_params) {
-    // Try to parse value as JSON to preserve original type
-    try {
-      j[key] = json::parse(value);
-    } catch (const json::parse_error&) {
-      // If parsing fails, treat as string
-      j[key] = value;
+  // Serialize additional_params as array of [key, value] pairs
+  if (!config.additional_params.empty()) {
+    json additional_params_array = json::array();
+    for (const auto& [key, value] : config.additional_params) {
+      json param_pair = json::array();
+      param_pair.push_back(key);
+      
+      // Try to parse value as JSON to preserve original type
+      try {
+        param_pair.push_back(json::parse(value));
+      } catch (const json::parse_error&) {
+        // If parsing fails, treat as string
+        param_pair.push_back(value);
+      }
+      
+      additional_params_array.push_back(param_pair);
     }
+    j["additional_params"] = additional_params_array;
   }
 
   // Format with specified indentation

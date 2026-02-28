@@ -2,7 +2,7 @@
 
 ## Overview
 
-This implementation extends the existing DPDK configuration system to support PMD thread configuration. The work involves adding new data structures to dpdk_config.h, extending the config parser to handle pmd_threads JSON arrays, adding validation logic for lcore and queue assignments, and updating the config printer to serialize PMD thread configurations.
+This implementation extends the existing DPDK configuration system to support PMD thread configuration. The work involves adding new data structures to dpdk_config.h, extending the config parser to handle pmd_threads JSON arrays, adding validation logic for lcore and queue assignments, updating the config printer to serialize PMD thread configurations, and implementing a two-class architecture (PMDThread and PMDThreadManager) that mirrors the existing PortManager/DpdkPort pattern for managing thread lifecycle and execution.
 
 ## Tasks
 
@@ -12,7 +12,7 @@ This implementation extends the existing DPDK configuration system to support PM
   - Add pmd_threads vector to DpdkConfig struct
   - _Requirements: 1.1, 1.2, 4.1, 4.2, 4.5_
 
-- [ ] 2. Extend config parser to parse PMD thread configuration
+- [x] 2. Extend config parser to parse PMD thread configuration
   - [x] 2.1 Implement parsing for pmd_threads array in ConfigParser::ParseString
     - Parse optional "pmd_threads" array from JSON
     - Handle empty/missing pmd_threads field gracefully
@@ -40,7 +40,7 @@ This implementation extends the existing DPDK configuration system to support PM
     - Test type validation errors
     - _Requirements: 1.1-1.8_
 
-- [ ] 3. Implement coremask parsing utilities for validator
+- [x] 3. Implement coremask parsing utilities for validator
   - [x] 3.1 Add ParseCoremask helper function to ConfigValidator
     - Parse hexadecimal coremask string (with/without 0x prefix)
     - Extract bit positions to determine available lcore IDs
@@ -65,7 +65,7 @@ This implementation extends the existing DPDK configuration system to support PM
     - Test port lookup
     - _Requirements: 2.1, 2.2, 7.1_
 
-- [ ] 4. Extend config validator to validate PMD thread configuration
+- [x] 4. Extend config validator to validate PMD thread configuration
   - [x] 4.1 Implement worker lcore availability check
     - Parse coremask to get available lcores
     - Determine main lcore
@@ -139,7 +139,7 @@ This implementation extends the existing DPDK configuration system to support PM
     - Generate configs with lcores not in coremask
     - Verify validation rejects unavailable lcores
 
-- [ ] 5. Extend config printer to serialize PMD thread configuration
+- [x] 5. Extend config printer to serialize PMD thread configuration
   - [x] 5.1 Implement pmd_threads array serialization in ConfigPrinter::ToJson
     - Serialize pmd_threads vector to JSON array
     - Skip serialization if pmd_threads is empty
@@ -184,12 +184,104 @@ This implementation extends the existing DPDK configuration system to support PM
 - [x] 9. Final checkpoint - Verify integration
   - Ensure all tests pass, ask the user if questions arise.
 
+- [x] 10. Refactor PmdThread from static class to instance-based class
+  - [x] 10.1 Refactor PmdThread class to instance-based design
+    - Remove all static methods except RunStub(void* arg)
+    - Add constructor that takes PmdThreadConfig and stores it as member
+    - Add GetLcoreId(), GetRxQueues(), GetTxQueues() accessor methods
+    - Rename WorkerMain to Run() and make it a private instance method
+    - Keep static RunStub(void* arg) that casts void* to PMDThread* and calls Run()
+    - Move ProcessPackets logic into Run() method
+    - Preserve existing packet processing loop and stop_flag behavior
+    - Keep verbose logging functionality in Run() method
+    - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5_
+  
+  - [ ]* 10.2 Write unit tests for refactored PMDThread class
+    - Test constructor stores configuration correctly
+    - Test accessors return correct values
+    - Test with various queue configurations
+    - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5_
+  
+  - [ ]* 10.3 Write property test for thread configuration preservation
+    - **Property 11: Thread Configuration Preservation**
+    - **Validates: Requirements 4.1, 4.2, 4.3, 4.4, 4.5**
+    - Generate random PmdThreadConfig instances
+    - Verify PMDThread accessors return exact configuration values
+
+- [x] 11. Extract thread management logic into new PMDThreadManager class
+  - [x] 11.1 Create PMDThreadManager class with extracted logic
+    - Create config/pmd_thread_manager.h with class declaration
+    - Create config/pmd_thread_manager.cc with implementation
+    - Extract LaunchThreads logic from PmdThread::LaunchThreads
+    - Extract WaitForThreads logic from PmdThread::WaitForThreads
+    - Extract StopAllThreads logic from PmdThread::StopAllThreads
+    - Move static stop_flag_ from PmdThread to PMDThreadManager
+    - Add GetThread(lcore_id), GetLcoreIds(), GetThreadCount() accessor methods
+    - Store threads in unordered_map<uint32_t, unique_ptr<PMDThread>>
+    - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
+  
+  - [x] 11.2 Refactor thread launch logic to use PMDThread instances
+    - Create PMDThread instances from configs (not just pass pointers)
+    - Call rte_eal_remote_launch with PMDThread::RunStub and PMDThread* arg
+    - Preserve main lcore skipping logic and verbose logging
+    - Preserve error handling for launch failures
+    - Store created PMDThread instances in unordered_map by lcore_id
+    - _Requirements: 5.1, 5.2, 5.3_
+  
+  - [x] 11.3 Refactor thread wait logic to iterate over stored threads
+    - Call rte_eal_wait_lcore for each lcore in the map
+    - Preserve error collection and reporting behavior
+    - _Requirements: 5.5_
+  
+  - [x] 11.4 Update existing callers to use PMDThreadManager
+    - Find all calls to PmdThread::LaunchThreads (likely in main.cc or dpdk_initializer.cc)
+    - Replace with PMDThreadManager instance and method calls
+    - Update StopAllThreads and WaitForThreads calls similarly
+    - Ensure no breaking changes to external API
+    - _Requirements: 5.1, 5.5_
+  
+  - [ ]* 11.5 Write unit tests for PMDThreadManager class
+    - Test LaunchThreads creates correct number of threads
+    - Test GetThread returns correct thread by lcore_id
+    - Test GetLcoreIds returns all launched lcores
+    - Test GetThreadCount returns correct count
+    - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
+  
+  - [ ]* 11.6 Write property test for thread-config correspondence
+    - **Property 10: Thread-Config Correspondence**
+    - **Validates: Requirement 5.1**
+    - Generate random valid thread configurations
+    - Verify manager creates exactly one thread per config
+    - Verify all threads are accessible via GetThread
+  
+  - [ ]* 11.7 Write integration test for thread launch and wait
+    - **Property 12: Launch-Wait Correspondence**
+    - **Validates: Requirement 5.5**
+    - Launch threads with DPDK EAL initialized
+    - Verify WaitForThreads completes successfully
+    - Verify rte_eal_wait_lcore called for each lcore
+    - Requires multi-core test environment
+
+- [x] 12. Update build system for PMDThreadManager
+  - Add pmd_thread_manager.cc to BUILD file (pmd_thread.cc already exists)
+  - Ensure DPDK EAL dependencies are included for both files
+  - Create test target for pmd_thread_manager_test (pmd_thread_test may already exist)
+  - _Requirements: 4.1-4.5, 5.1-5.5_
+
+- [x] 13. Final checkpoint - Ensure all tests pass
+  - Ensure all tests pass, ask the user if questions arise.
+
 ## Notes
 
 - Tasks marked with `*` are optional and can be skipped for faster MVP
 - Each task references specific requirements for traceability
-- Property tests validate universal correctness properties from the design document
+- Property tests validate universal correctness properties from the design document (12 total properties)
 - Unit tests validate specific examples and edge cases
 - The implementation extends existing components without breaking changes
 - Coremask parsing utilities are essential for validation logic
 - Error messages should be descriptive and include context (lcore_id, port_id, queue_id)
+- Tasks 10-11 are REFACTORING tasks: converting existing static PmdThread class to instance-based design and extracting management logic into PMDThreadManager
+- The refactoring preserves all existing functionality: stop_flag, verbose logging, main lcore skipping, packet processing loop
+- PMDThreadManager mirrors the existing PortManager/DpdkPort architecture pattern
+- Main lcore is reserved for control plane and automatically skipped during thread launch
+- Integration tests for thread launch/wait require DPDK EAL initialization and multi-core environment

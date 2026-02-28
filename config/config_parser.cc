@@ -347,11 +347,22 @@ absl::StatusOr<DpdkConfig> ConfigParser::ParseString(
     }
   }
 
+  // Parse explicit additional_params field (array of [key, value] pairs)
+  if (j.contains("additional_params") && j["additional_params"].is_array()) {
+    for (const auto& param : j["additional_params"]) {
+      if (param.is_array() && param.size() >= 2) {
+        std::string key = param[0].get<std::string>();
+        std::string value = param[1].is_string() ? param[1].get<std::string>() : param[1].dump();
+        config.additional_params.emplace_back(key, value);
+      }
+    }
+  }
+
   // Parse additional_params (any other fields as key-value pairs)
   // Skip the known fields we've already processed
   const std::set<std::string> known_fields = {
       "core_mask", "memory_channels", "pci_allowlist",
-      "pci_blocklist", "log_level", "huge_pages", "ports", "pmd_threads"
+      "pci_blocklist", "log_level", "huge_pages", "ports", "pmd_threads", "additional_params"
   };
 
   for (auto it = j.begin(); it != j.end(); ++it) {

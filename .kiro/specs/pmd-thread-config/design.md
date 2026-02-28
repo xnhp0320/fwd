@@ -8,12 +8,47 @@ This design extends the existing DPDK configuration system to support PMD (Poll 
 
 ### Component Overview
 
-The feature extends four existing components:
+The feature extends four existing components and adds two new classes:
 
 1. **Data Structures** (`config/dpdk_config.h`): Add PMD thread configuration structures
 2. **Config Parser** (`config/config_parser.cc`): Parse PMD thread configuration from JSON
 3. **Config Validator** (`config/config_validator.cc`): Validate PMD thread assignments
 4. **Config Printer** (`config/config_printer.cc`): Serialize PMD thread configuration to JSON
+5. **PMDThreadManager** (`config/pmd_thread_manager.h/cc`): Manages lifecycle and coordination of all PMD threads
+6. **PMDThread** (`config/pmd_thread.h/cc`): Encapsulates per-thread logic and packet processing
+
+### Architecture Pattern
+
+This design follows the same pattern as the existing PortManager/DpdkPort architecture:
+
+- **Manager Class (PMDThreadManager)**: Coordinates multiple instances, handles initialization and lifecycle
+- **Instance Class (PMDThread)**: Encapsulates per-instance state and operations
+
+This separation provides:
+- **Single Responsibility**: Manager handles coordination, instances handle execution
+- **Testability**: Each class can be tested independently
+- **Extensibility**: Easy to add new thread types or management strategies
+
+### Data Flow
+
+```
+JSON Config → ConfigParser → PmdThreadConfig (vector)
+                                     ↓
+                              ConfigValidator
+                                     ↓
+                              PMDThreadManager::LaunchThreads
+                                     ↓
+                    ┌────────────────┴────────────────┐
+                    ↓                                 ↓
+              PMDThread(config1)              PMDThread(config2)
+                    ↓                                 ↓
+         rte_eal_remote_launch(lcore1)  rte_eal_remote_launch(lcore2)
+                    ↓                                 ↓
+              PMDThread::Run()                 PMDThread::Run()
+           (polls port0, queue0)            (polls port1, queue0)
+```
+
+Each PMDThread receives its configuration (lcore_id + queue assignments) and runs independently on its assigned lcore.
 
 ### Data Structure Design
 
@@ -87,6 +122,146 @@ struct DpdkConfig {
     }
   ]
 }
+```
+
+## Class Designs
+
+### PMDThread Class
+
+**Location**: `config/pmd_thread.h`, `config/pmd_thread.cc`
+
+**Purpose**: Encapsulates per-thread logic for a single PMD worker thread.
+
+**Responsibilities**:
+- Store (port, queue_id) pairs for RX and TX operations
+- Execute the packet processing loop on assigned lcore
+- Provide thread-local operations and state management
+
+**Interface**:
+
+```cpp
+class PMDThread {
+ public:
+  // Create a PMD thread from configuration
+  explicit PMDThread(const PmdThreadConfig& config);
+  
+  // Get the lcore ID this thread runs on
+  uint32_t GetLcoreId() const { return config_.lcore_id; }
+  
+  // Get RX queue assignments
+  const std::vector<QueueAssignment>& GetRxQueues() const { 
+    return config_.rx_queues; 
+  }
+  
+  // Get TX queue assignments
+  const std::vector<QueueAssignment>& GetTxQueues() const { 
+    return config_.tx_queues; 
+  }
+  
+  // Static entry point for DPDK remote launch
+  // This is the function passed to rte_eal_remote_launch
+  static int RunStub(void* arg);
+  
+ private:
+  // The actual packet processing loop (stub implementation)
+  int Run();
+  
+  PmdThreadConfig config_;
+};
+```
+
+**Implementation Notes**:
+- Constructor stores the configuration (lcore_id and queue assignments)
+- `RunStub` is a static function that casts the void* argument back to PMDThread* and calls Run()
+- `Run()` is the instance method that executes the packet processing loop
+- For now, Run() is a stub that logs the lcore and queue assignments, then returns immediately
+- Future implementations will add actual packet polling logic using rte_eth_rx_burst/rte_eth_tx_burst
+
+### PMDThreadManager Class
+
+**Location**: `config/pmd_thread_manager.h`, `config/pmd_thread_manager.cc`
+
+**Purpose**: Manages lifecycle and coordination of all PMD threads.
+
+**Responsibilities**:
+- Launch all PMD threads based on configuration
+- Track thread handles and state
+- Coordinate shutdown sequence (stop, wait, join operations)
+- Provide access to individual thread instances
+
+**Interface**:
+
+```cpp
+class PMDThreadManager {
+ public:
+  PMDThreadManager() = default;
+  
+  // Initialize and launch all PMD threads from configuration
+  // Must be called after rte_eal_init()
+  // Skips the main lcore (reserved for control plane)
+  absl::Status LaunchThreads(const std::vector<PmdThreadConfig>& thread_configs);
+  
+  // Wait for all PMD threads to complete
+  // Calls rte_eal_wait_lcore for each launched thread
+  absl::Status WaitForThreads();
+  
+  // Get a specific thread by lcore ID
+  PMDThread* GetThread(uint32_t lcore_id);
+  
+  // Get all lcore IDs with running threads
+  std::vector<uint32_t> GetLcoreIds() const;
+  
+  // Get number of launched threads
+  size_t GetThreadCount() const { return threads_.size(); }
+  
+ private:
+  std::unordered_map<uint32_t, std::unique_ptr<PMDThread>> threads_;
+};
+```
+
+**Implementation Notes**:
+- `LaunchThreads` creates PMDThread instances and calls rte_eal_remote_launch for each
+- Each thread is launched on its configured lcore using `rte_eal_remote_launch(PMDThread::RunStub, thread.get(), lcore_id)`
+- Main lcore is automatically skipped (validation ensures no config uses main lcore)
+- `WaitForThreads` calls `rte_eal_wait_lcore` for each launched lcore
+- Threads are stored in a map keyed by lcore_id for easy lookup
+- Manager owns the PMDThread instances via unique_ptr
+
+**Launch Algorithm**:
+
+```
+FUNCTION LaunchThreads(thread_configs: vector<PmdThreadConfig>) -> Status
+  // Clear any existing threads
+  threads_.clear()
+  
+  FOR EACH config IN thread_configs DO
+    // Create PMDThread instance
+    thread = make_unique<PMDThread>(config)
+    lcore_id = config.lcore_id
+    
+    // Launch thread on remote lcore
+    ret = rte_eal_remote_launch(PMDThread::RunStub, thread.get(), lcore_id)
+    IF ret != 0 THEN
+      RETURN error "Failed to launch PMD thread on lcore {lcore_id}"
+    END IF
+    
+    // Store thread in map
+    threads_[lcore_id] = move(thread)
+  END FOR
+  
+  RETURN OK
+END FUNCTION
+
+FUNCTION WaitForThreads() -> Status
+  FOR EACH [lcore_id, thread] IN threads_ DO
+    ret = rte_eal_wait_lcore(lcore_id)
+    IF ret != 0 THEN
+      RETURN error "PMD thread on lcore {lcore_id} returned error: {ret}"
+    END IF
+  END FOR
+  
+  RETURN OK
+END FUNCTION
 ```
 
 ## Component Designs
@@ -397,6 +572,10 @@ END FUNCTION
 
 ## Correctness Properties
 
+*A property is a characteristic or behavior that should hold true across all valid executions of a system-essentially, a formal statement about what the system should do. Properties serve as the bridge between human-readable specifications and machine-verifiable correctness guarantees.*
+
+### Configuration Properties
+
 ### Property 1: Parse-Print Round Trip Consistency
 
 **Statement**: For any valid PMD thread configuration JSON, parsing and then printing produces an equivalent configuration.
@@ -543,7 +722,108 @@ END FUNCTION
 
 **Test Strategy**: Property-based test with various coremasks, verify validation rejects unavailable lcores
 
+### Thread Management Properties
+
+### Property 10: Thread-Config Correspondence
+
+**Statement**: For any valid configuration, PMDThreadManager creates exactly one PMDThread per PmdThreadConfig.
+
+**Formal Definition**:
+```
+∀ thread_configs ∈ ValidPmdThreadConfigs:
+  manager.LaunchThreads(thread_configs) succeeds
+  ⟹ manager.GetThreadCount() = |thread_configs|
+  ∧ ∀ config ∈ thread_configs: 
+      manager.GetThread(config.lcore_id) ≠ null
+```
+
+**Validates**: Requirement 5.1
+
+**Test Strategy**: Property-based test with various configurations, verify thread count and lookup
+
+### Property 11: Thread Configuration Preservation
+
+**Statement**: Each PMDThread preserves its configuration exactly as provided.
+
+**Formal Definition**:
+```
+∀ config ∈ ValidPmdThreadConfig:
+  thread = PMDThread(config)
+  ⟹ thread.GetLcoreId() = config.lcore_id
+  ∧ thread.GetRxQueues() = config.rx_queues
+  ∧ thread.GetTxQueues() = config.tx_queues
+```
+
+**Validates**: Requirements 4.1, 4.2, 4.3, 4.4, 4.5
+
+**Test Strategy**: Property-based test generating random configs, verify accessors return exact values
+
+### Property 12: Launch-Wait Correspondence
+
+**Statement**: For any successfully launched threads, WaitForThreads completes for all lcores.
+
+**Formal Definition**:
+```
+∀ thread_configs ∈ ValidPmdThreadConfigs:
+  manager.LaunchThreads(thread_configs) succeeds
+  ⟹ manager.WaitForThreads() succeeds
+  ∧ ∀ config ∈ thread_configs:
+      rte_eal_wait_lcore(config.lcore_id) was called
+```
+
+**Validates**: Requirement 5.5
+
+**Test Strategy**: Integration test with DPDK EAL, verify wait is called for each lcore
+
 ## Implementation Notes
+
+### Two-Class Architecture Benefits
+
+The PMDThreadManager/PMDThread split provides several advantages:
+
+1. **Separation of Concerns**:
+   - PMDThread focuses on per-thread execution logic
+   - PMDThreadManager handles coordination and lifecycle
+
+2. **Testability**:
+   - PMDThread can be unit tested without DPDK EAL initialization
+   - PMDThreadManager can be tested with mock PMDThread instances
+
+3. **Consistency**:
+   - Mirrors the existing PortManager/DpdkPort pattern
+   - Developers familiar with port management will understand thread management
+
+4. **Extensibility**:
+   - Easy to add new thread types (e.g., control threads, monitoring threads)
+   - Manager can implement different launch strategies (sequential, parallel, priority-based)
+
+### Thread Launch Sequence
+
+The typical usage pattern:
+
+```cpp
+// After rte_eal_init() and port initialization
+PMDThreadManager thread_manager;
+
+// Launch all configured PMD threads
+absl::Status status = thread_manager.LaunchThreads(config.pmd_threads);
+if (!status.ok()) {
+  // Handle error
+}
+
+// Main lcore continues with control plane work (boost.asio)
+// ...
+
+// When shutting down, wait for all threads
+status = thread_manager.WaitForThreads();
+```
+
+### Main Lcore Reservation
+
+The main lcore (returned by `rte_get_main_lcore()`) is reserved for control plane operations:
+- Runs the boost.asio unix-socket listener
+- Handles control requests without blocking on packet processing
+- Never assigned to PMD threads (enforced by validation)
 
 ### Coremask Parsing
 
@@ -566,24 +846,123 @@ All validation errors should include:
 - Clear indication of what constraint was violated
 - Actionable guidance for fixing the configuration
 
-### Testing Strategy
+## Error Handling
 
-1. **Unit Tests**: Test each parsing/validation/printing function independently
-2. **Property-Based Tests**: Generate random valid configurations and verify properties
-3. **Integration Tests**: Test complete parse-validate-print cycles
-4. **Edge Cases**: Empty arrays, single-core systems, maximum queue counts
+### Configuration Errors
+
+Configuration parsing and validation errors are returned as `absl::Status` with descriptive messages:
+
+- **Parse Errors**: Invalid JSON structure, missing required fields, wrong types
+  - Example: "Field 'lcore_id' must be an unsigned integer"
+  - Example: "PMD thread missing required field: lcore_id"
+
+- **Validation Errors**: Constraint violations in valid JSON
+  - Example: "PMD thread cannot use main lcore 0 (reserved for control plane)"
+  - Example: "Duplicate RX queue assignment: port 0, queue 1"
+  - Example: "PMD thread on lcore 2: RX queue 3 out of range for port 0 (max: 1)"
+
+### Thread Management Errors
+
+Thread launch and lifecycle errors:
+
+- **Launch Failures**: DPDK remote launch errors
+  - Example: "Failed to launch PMD thread on lcore 2: lcore not available"
+  - Returned immediately from `PMDThreadManager::LaunchThreads`
+  - Cleanup: Any successfully launched threads remain running (caller must handle)
+
+- **Wait Failures**: Thread execution errors
+  - Example: "PMD thread on lcore 2 returned error: -1"
+  - Returned from `PMDThreadManager::WaitForThreads`
+  - Indicates thread encountered an error during execution
+
+### Error Recovery
+
+- **Configuration Errors**: Fix configuration and retry parsing/validation
+- **Launch Errors**: Check DPDK EAL initialization and coremask, retry launch
+- **Wait Errors**: Investigate thread logs, check for resource exhaustion
+
+## Testing Strategy
+
+### Unit Testing
+
+**PMDThread Tests**:
+- Constructor stores configuration correctly
+- Accessors return correct values (lcore_id, rx_queues, tx_queues)
+- Can be tested without DPDK EAL initialization
+
+**PMDThreadManager Tests**:
+- LaunchThreads creates correct number of threads
+- GetThread returns correct thread by lcore_id
+- GetLcoreIds returns all launched lcores
+- Can use mock PMDThread instances for testing without DPDK
+
+**Configuration Tests**:
+- Parser handles valid and invalid JSON
+- Validator catches all constraint violations
+- Printer produces valid JSON
+- Round-trip consistency
+
+### Property-Based Testing
+
+Using a C++ property-based testing library (e.g., RapidCheck):
+
+- Generate random valid configurations (100+ iterations per property)
+- Verify all 12 correctness properties
+- Tag each test with: **Feature: pmd-thread-config, Property N: [description]**
+
+### Integration Testing
+
+**With DPDK EAL**:
+- Launch real PMDThread instances on worker lcores
+- Verify threads execute and return successfully
+- Test WaitForThreads completes for all threads
+- Requires multi-core test environment
+
+**End-to-End**:
+- Parse config → Validate → Launch threads → Wait → Verify execution
+- Test with various coremasks and queue configurations
+
+### Edge Cases
+
+- Empty pmd_threads array (valid, no threads launched)
+- Single worker lcore (main + 1 worker)
+- Maximum queue counts (stress test)
+- Main lcore boundary (lcore 0 vs. other main lcores)
+- All queues assigned vs. partial assignment
+
+### Test Organization
+
+```
+config/
+  pmd_thread_test.cc              # PMDThread unit tests
+  pmd_thread_manager_test.cc      # PMDThreadManager unit tests
+  config_parser_test.cc           # Parser tests (extended)
+  config_validator_test.cc        # Validator tests (extended)
+  config_printer_test.cc          # Printer tests (extended)
+  pmd_thread_properties_test.cc   # Property-based tests
+  pmd_thread_integration_test.cc  # Integration tests (requires DPDK)
+```
 
 ## Dependencies
 
 - Existing DPDK configuration system (dpdk_config.h, config_parser, config_validator, config_printer)
+- Existing PortManager/DpdkPort architecture (pattern to mirror)
 - nlohmann/json library for JSON parsing
 - absl::Status for error handling
-- C++17 standard library (std::optional, std::vector)
+- C++17 standard library (std::optional, std::vector, std::unordered_map, std::unique_ptr)
+- DPDK EAL APIs (rte_eal_remote_launch, rte_eal_wait_lcore, rte_get_main_lcore)
 
 ## Future Extensions
 
-This design focuses on configuration parsing, validation, and serialization. Future work will include:
-- PMD thread lifecycle management (launching threads on lcores)
-- Packet processing loop implementation
-- Integration with DPDK rte_eal_remote_launch API
-- Performance monitoring and statistics collection
+This design implements the complete infrastructure for PMD thread management:
+- Configuration parsing, validation, and serialization ✓
+- PMDThread class for per-thread logic ✓
+- PMDThreadManager class for lifecycle management ✓
+- Thread launch and coordination ✓
+
+Future work will include:
+- Actual packet processing implementation (replacing the stub in PMDThread::Run)
+- Packet RX/TX operations using rte_eth_rx_burst/rte_eth_tx_burst
+- Performance monitoring and statistics collection per thread
+- Dynamic thread reconfiguration (add/remove threads at runtime)
+- Thread affinity and priority tuning
