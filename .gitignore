@@ -1,0 +1,7 @@
+**/__pycache__
+MODULE.bazel.lock
+bazel-bin
+bazel-dpdk_bazel_xsight
+bazel-out
+bazel-testlogs
+tests/test-results/
