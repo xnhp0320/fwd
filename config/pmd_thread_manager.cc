@@ -5,6 +5,7 @@
 #include <rte_lcore.h>
 
 #include "absl/strings/str_cat.h"
+#include "processor/processor_registry.h"
 
 namespace dpdk_config {
 
@@ -50,6 +51,27 @@ absl::Status PMDThreadManager::LaunchThreads(
         std::cout << "(" << q.port_id << "," << q.queue_id << ") ";
       }
       std::cout << "\n";
+    }
+
+    // Look up processor by name (or default) from the registry
+    auto& registry = processor::ProcessorRegistry::Instance();
+
+    std::string proc_name = config.processor_name.empty()
+        ? processor::ProcessorRegistry::kDefaultProcessorName
+        : config.processor_name;
+
+    auto entry_or = registry.Lookup(proc_name);
+    if (!entry_or.ok()) {
+      return entry_or.status();
+    }
+
+    // Validate queue assignments against the processor's requirements
+    auto check_status = (*entry_or)->checker(config.rx_queues, config.tx_queues);
+    if (!check_status.ok()) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("PMD thread on lcore ", config.lcore_id,
+                       ": processor '", proc_name, "' check failed: ",
+                       check_status.message()));
     }
 
     // Create PMDThread instance

@@ -7,6 +7,7 @@
 #include <rte_mbuf.h>
 
 #include "absl/strings/str_cat.h"
+#include "processor/processor_registry.h"
 
 namespace dpdk_config {
 
@@ -25,26 +26,20 @@ int PmdThread::RunStub(void* arg) {
 }
 
 int PmdThread::Run() {
-  unsigned lcore_id = rte_lcore_id();
-  std::cout << "PMD thread started on lcore " << lcore_id << "\n";
-  std::cout << "  RX queues: " << config_.rx_queues.size() << "\n";
-  std::cout << "  TX queues: " << config_.tx_queues.size() << "\n";
+  // Look up the launcher from the registry (already validated at startup).
+  auto& registry = processor::ProcessorRegistry::Instance();
+  std::string name = config_.processor_name.empty()
+      ? processor::ProcessorRegistry::kDefaultProcessorName
+      : config_.processor_name;
 
-  // Main packet processing loop
-  while (!stop_flag_ptr_->load(std::memory_order_relaxed)) {
-    // Process packets for all assigned queues
-    // TODO: Implement packet processing logic
-    // This function will:
-    // 1. Receive packets from RX queues using rte_eth_rx_burst()
-    // 2. Process packets (currently left blank)
-    // 3. Transmit packets to TX queues using rte_eth_tx_burst()
-    
-    // Placeholder: yield to avoid busy-waiting in empty implementation
-    rte_pause();
+  auto entry_or = registry.Lookup(name);
+  if (!entry_or.ok()) {
+    std::cerr << "Processor lookup failed: " << entry_or.status() << "\n";
+    return -1;
   }
 
-  std::cout << "PMD thread on lcore " << lcore_id << " stopping\n";
-  return 0;
+  // Enter the monomorphized hot loop.
+  return (*entry_or)->launcher(config_, stop_flag_ptr_);
 }
 
 }  // namespace dpdk_config

@@ -27,6 +27,9 @@ struct PmdThreadConfig {
   
   // List of TX queue assignments for this PMD thread
   std::vector<QueueAssignment> tx_queues;
+
+  // Processor name for this PMD thread (empty string = use default processor)
+  std::string processor_name;
 };
 
 // Port configuration structure for DPDK port initialization

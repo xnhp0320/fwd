@@ -343,6 +343,17 @@ absl::StatusOr<DpdkConfig> ConfigParser::ParseString(
         }
       }
       
+      // Parse processor (optional string)
+      if (thread_json.contains("processor")) {
+        if (!thread_json["processor"].is_string()) {
+          return absl::InvalidArgumentError(
+              absl::StrCat("PMD thread on lcore ", pmd_config.lcore_id,
+                           ": field 'processor' must be a string"));
+        }
+        pmd_config.processor_name =
+            thread_json["processor"].get<std::string>();
+      }
+
       config.pmd_threads.push_back(pmd_config);
     }
   }

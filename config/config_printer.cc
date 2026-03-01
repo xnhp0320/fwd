@@ -89,6 +89,11 @@ std::string ConfigPrinter::ToJson(const DpdkConfig& config, int indent) {
         }
         thread_json["tx_queues"] = tx_queues_array;
       }
+
+      // Serialize processor_name (skip if empty — empty means use default)
+      if (!pmd_config.processor_name.empty()) {
+        thread_json["processor"] = pmd_config.processor_name;
+      }
       
       pmd_threads_array.push_back(thread_json);
     }
