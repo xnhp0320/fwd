@@ -8,14 +8,19 @@
 #include "absl/status/status.h"
 #include "config/dpdk_config.h"
 
+struct rte_rcu_qsbr;
+
 namespace dpdk_config {
 
 // PMD thread worker function that runs on each lcore
 // PMD thread worker function that runs on each lcore
 class PmdThread {
  public:
-  // Create a PMD thread from configuration with a reference to the stop flag
-  PmdThread(const PmdThreadConfig& config, std::atomic<bool>* stop_flag);
+  // Create a PMD thread from configuration with a reference to the stop flag.
+  // qsbr_var is an optional QSBR variable pointer for RCU quiescent state
+  // reporting; when nullptr, quiescent state reporting is skipped.
+  PmdThread(const PmdThreadConfig& config, std::atomic<bool>* stop_flag,
+            struct rte_rcu_qsbr* qsbr_var = nullptr);
 
   // Get the lcore ID this thread runs on
   uint32_t GetLcoreId() const { return config_.lcore_id; }
@@ -43,6 +48,11 @@ class PmdThread {
 
   // Pointer to the stop flag (owned by PMDThreadManager)
   std::atomic<bool>* stop_flag_ptr_;
+
+  // Optional QSBR variable for RCU quiescent state reporting.
+  // When non-null, Run() passes it to the launcher so the hot loop
+  // calls rte_rcu_qsbr_quiescent() after each processing batch.
+  struct rte_rcu_qsbr* qsbr_var_ = nullptr;
 }
 ;
 

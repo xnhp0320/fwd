@@ -50,6 +50,7 @@ cc_library(
         ":signal_handler",
         ":unix_socket_server",
         "//config:pmd_thread_manager",
+        "//rcu:rcu_manager",
         "//:dpdk_lib",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/strings",

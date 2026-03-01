@@ -166,7 +166,7 @@ The implementation creates a test directory structure with Python fixtures for c
   - Ask the user if questions arise
 
 - [ ] 12. Implement performance and reliability tests
-  - [~] 12.1 Create test_performance.py with TestPerformance class
+  - [ ] 12.1 Create test_performance.py with TestPerformance class
     - Implement test_command_response_time() to measure average/max latency
     - Implement test_rapid_command_sequence() to test command throughput
     - Implement test_concurrent_connections() to test multiple clients
@@ -179,7 +179,7 @@ The implementation creates a test directory structure with Python fixtures for c
     - **Validates: Requirements 13.2, 13.5, 13.6, 13.7**
 
 - [ ] 13. Create test documentation and scripts
-  - [~] 13.1 Create tests/README.md
+  - [ ] 13.1 Create tests/README.md
     - Document framework overview and quick start
     - Document directory structure and test categories
     - Document how to run tests (all, specific, with markers)
@@ -188,20 +188,20 @@ The implementation creates a test directory structure with Python fixtures for c
     - Document CI/CD integration
     - _Requirements: 2.7, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 10.8_
   
-  - [~] 13.2 Create tests/scripts/run_all_tests.sh
+  - [ ] 13.2 Create tests/scripts/run_all_tests.sh
     - Run Bazel unit tests first
     - Run pytest e2e tests second
     - Exit with appropriate status code
     - _Requirements: 12.3, 12.4, 14.1, 14.2_
   
-  - [~] 13.3 Update tests/docs/TESTING_GUIDE.md
+  - [ ] 13.3 Update tests/docs/TESTING_GUIDE.md
     - Add section on e2e test framework
     - Document net_tap driver selection rationale
     - Document VM and no-hugepage support
     - _Requirements: 1.2, 9.3, 9.4, 10.2, 10.8_
 
 - [ ] 14. Implement error handling and diagnostics
-  - [~] 14.1 Enhance fixtures with failure diagnostics
+  - [ ] 14.1 Enhance fixtures with failure diagnostics
     - Capture and save process output on test failure
     - Capture and save configuration on test failure
     - Capture and save control plane responses on test failure
@@ -213,7 +213,7 @@ The implementation creates a test directory structure with Python fixtures for c
     - **Validates: Requirements 11.1, 11.2, 11.3, 11.6, 11.7**
 
 - [ ] 15. Implement CI/CD integration support
-  - [~] 15.1 Configure pytest for CI/CD
+  - [ ] 15.1 Configure pytest for CI/CD
     - Ensure tests run without interactive input
     - Configure JUnit XML output generation
     - Configure HTML report generation
@@ -227,13 +227,13 @@ The implementation creates a test directory structure with Python fixtures for c
     - **Property 23: Machine-Readable Results**
     - **Validates: Requirements 14.1, 14.2, 14.3, 14.5**
   
-  - [~] 15.3 Create example CI/CD configuration
+  - [ ] 15.3 Create example CI/CD configuration
     - Create .github/workflows/e2e-tests.yml example
     - Document required CI environment setup
     - Document privilege requirements and skip logic
     - _Requirements: 14.4, 14.6, 14.7_
 
-- [~] 16. Final checkpoint - Verify complete test suite
+- [ ] 16. Final checkpoint - Verify complete test suite
   - Run full test suite: pytest tests/e2e/ -v
   - Verify all test categories pass (lifecycle, control plane, PMD threads, multi-config)
   - Verify JUnit XML and HTML reports are generated

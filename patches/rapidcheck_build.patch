@@ -1,0 +1,12 @@
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -3,7 +3,6 @@
+ cc_library(
+     name = "rapidcheck",
+     srcs = glob([
+-        "src/**/*.cpp",
+-        "src/**/*.h",
+-        "include/**/*.cpp",
++        "src/**/*.cpp",
++        "src/**/*.h",
+     ]),

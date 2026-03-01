@@ -6,6 +6,7 @@
 
 #include "absl/status/status.h"
 #include "boost/asio/io_context.hpp"
+#include "rcu/rcu_manager.h"
 
 namespace dpdk_config {
 
@@ -44,6 +45,7 @@ class ControlPlane {
   PMDThreadManager* thread_manager_;  // Not owned
   Config config_;
   std::unique_ptr<boost::asio::io_context> io_context_;
+  std::unique_ptr<rcu::RcuManager> rcu_manager_;
   std::unique_ptr<UnixSocketServer> socket_server_;
   std::unique_ptr<SignalHandler> signal_handler_;
   std::unique_ptr<CommandHandler> command_handler_;

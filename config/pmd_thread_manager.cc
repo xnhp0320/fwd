@@ -6,8 +6,13 @@
 
 #include "absl/strings/str_cat.h"
 #include "processor/processor_registry.h"
+#include "rcu/rcu_manager.h"
 
 namespace dpdk_config {
+
+void PMDThreadManager::SetRcuManager(rcu::RcuManager* rcu_manager) {
+  rcu_manager_ = rcu_manager;
+}
 
 absl::Status PMDThreadManager::LaunchThreads(
     const std::vector<PmdThreadConfig>& thread_configs, bool verbose) {
@@ -28,6 +33,10 @@ absl::Status PMDThreadManager::LaunchThreads(
               << " (reserved for control plane)\n";
     std::cout << "Launching " << thread_configs.size() << " PMD thread(s)\n";
   }
+
+  // Resolve QSBR var pointer once (nullptr if no RCU manager)
+  struct rte_rcu_qsbr* qsbr_var =
+      rcu_manager_ ? rcu_manager_->GetQsbrVar() : nullptr;
 
   // Launch PMD threads on configured lcores
   for (const auto& config : thread_configs) {
@@ -74,8 +83,16 @@ absl::Status PMDThreadManager::LaunchThreads(
                        check_status.message()));
     }
 
-    // Create PMDThread instance
-    auto thread = std::make_unique<PmdThread>(config, &stop_flag_);
+    // Register thread with RCU manager if set
+    if (rcu_manager_ != nullptr) {
+      absl::Status reg_status = rcu_manager_->RegisterThread(config.lcore_id);
+      if (!reg_status.ok()) {
+        return reg_status;
+      }
+    }
+
+    // Create PMDThread instance, passing QSBR var for quiescent state reporting
+    auto thread = std::make_unique<PmdThread>(config, &stop_flag_, qsbr_var);
 
     // Launch worker on the specified lcore
     int ret = rte_eal_remote_launch(PmdThread::RunStub, thread.get(),
@@ -110,6 +127,13 @@ absl::Status PMDThreadManager::WaitForThreads() {
       return absl::InternalError(
           absl::StrCat("PMD thread on lcore ", lcore_id,
                        " returned error: ", ret));
+    }
+  }
+
+  // Unregister all threads from the RCU manager after all waits complete
+  if (rcu_manager_ != nullptr) {
+    for (const auto& [lcore_id, thread] : threads_) {
+      (void)rcu_manager_->UnregisterThread(lcore_id);
     }
   }
 

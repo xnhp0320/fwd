@@ -20,6 +20,7 @@ cc_library(
     deps = [
         ":packet_processor_base",
         "//config:dpdk_config",
+        "//:dpdk_lib",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:statusor",

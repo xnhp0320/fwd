@@ -10,6 +10,10 @@
 #include "config/dpdk_config.h"
 #include "config/pmd_thread.h"
 
+namespace rcu {
+class RcuManager;
+}  // namespace rcu
+
 namespace dpdk_config {
 
 // Manages lifecycle and coordination of all PMD threads
@@ -17,6 +21,11 @@ namespace dpdk_config {
 class PMDThreadManager {
  public:
   PMDThreadManager() = default;
+
+  // Set the RCU manager. When set, LaunchThreads will register threads
+  // and the hot loop will report quiescent states.
+  // When nullptr (default), PMDThreadManager operates without RCU support.
+  void SetRcuManager(rcu::RcuManager* rcu_manager);
 
   // Initialize and launch all PMD threads from configuration
   // Must be called after rte_eal_init()
@@ -44,6 +53,9 @@ class PMDThreadManager {
  private:
   // Global flag to signal threads to stop
   std::atomic<bool> stop_flag_{false};
+
+  // Optional RCU manager for thread registration and QSBR support. Not owned.
+  rcu::RcuManager* rcu_manager_ = nullptr;
 
   // Map of lcore_id to PMDThread instances
   std::unordered_map<uint32_t, std::unique_ptr<PmdThread>> threads_;

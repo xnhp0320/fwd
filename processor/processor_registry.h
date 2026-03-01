@@ -6,6 +6,9 @@
 #include <string>
 #include <vector>
 
+#include <rte_lcore.h>
+#include <rte_rcu_qsbr.h>
+
 #include "absl/container/flat_hash_map.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
@@ -17,7 +20,8 @@ namespace processor {
 // specific processor type. It is called once per PMD thread.
 // Returns 0 on success, non-zero on error.
 using LauncherFn = std::function<int(const dpdk_config::PmdThreadConfig& config,
-                                     std::atomic<bool>* stop_flag)>;
+                                     std::atomic<bool>* stop_flag,
+                                     struct rte_rcu_qsbr* qsbr_var)>;
 
 // A check function validates queue assignments for a processor type.
 // Called at startup before entering the hot loop.
@@ -61,10 +65,14 @@ ProcessorEntry MakeProcessorEntry() {
       // Launcher: constructs the processor and runs the tight loop.
       .launcher =
           [](const dpdk_config::PmdThreadConfig& config,
-             std::atomic<bool>* stop_flag) -> int {
+             std::atomic<bool>* stop_flag,
+             struct rte_rcu_qsbr* qsbr_var) -> int {
         ProcessorType proc(config);
         while (!stop_flag->load(std::memory_order_relaxed)) {
           proc.process_impl();  // Direct call — compiler knows exact type.
+          if (qsbr_var) {
+            rte_rcu_qsbr_quiescent(qsbr_var, rte_lcore_id());
+          }
         }
         return 0;
       },

@@ -102,6 +102,7 @@ cc_library(
         "//:dpdk_lib",
         "//processor:processor_registry",
         "//processor:simple_forwarding_processor",
+        "//rcu:rcu_manager",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/strings",
     ],

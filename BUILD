@@ -27,6 +27,7 @@ cc_binary(
         "//config:dpdk_initializer",
         "//config:pmd_thread_manager",
         "//control:control_plane",
+        "//rcu:rcu_manager",
         "@abseil-cpp//absl/flags:flag",
         "@abseil-cpp//absl/flags:parse",
         "@abseil-cpp//absl/strings",

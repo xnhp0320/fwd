@@ -9,10 +9,11 @@
 #include <iostream>
 
 #include "absl/strings/str_cat.h"
+#include "config/pmd_thread_manager.h"
 #include "control/command_handler.h"
 #include "control/signal_handler.h"
 #include "control/unix_socket_server.h"
-#include "config/pmd_thread_manager.h"
+#include "rcu/rcu_manager.h"
 
 namespace dpdk_config {
 
@@ -71,6 +72,20 @@ absl::Status ControlPlane::Initialize(const Config& config) {
   // Create io_context
   io_context_ = std::make_unique<boost::asio::io_context>();
 
+  // Create and initialize the RCU manager
+  rcu_manager_ = std::make_unique<rcu::RcuManager>();
+  rcu::RcuManager::Config rcu_config;
+  auto rcu_status = rcu_manager_->Init(*io_context_, rcu_config);
+  if (!rcu_status.ok()) {
+    return rcu_status;
+  }
+
+  // Wire RCU manager into the thread manager for automatic
+  // thread registration and quiescent state reporting.
+  if (thread_manager_) {
+    thread_manager_->SetRcuManager(rcu_manager_.get());
+  }
+
   // Initialize CommandHandler with shutdown callback
   command_handler_ = std::make_unique<CommandHandler>(
       thread_manager_,
@@ -116,6 +131,14 @@ absl::Status ControlPlane::Run() {
   std::cout << "ControlPlane running, event loop started\n";
   std::cout.flush();
 
+  // Start the RCU poll timer before entering the event loop
+  if (rcu_manager_) {
+    auto rcu_status = rcu_manager_->Start();
+    if (!rcu_status.ok()) {
+      return rcu_status;
+    }
+  }
+
   // Run the event loop (blocks until shutdown)
   io_context_->run();
 
@@ -140,6 +163,12 @@ void ControlPlane::Shutdown() {
   // Stop signal handler
   if (signal_handler_) {
     signal_handler_->Stop();
+  }
+
+  // Stop RCU manager before stopping PMD threads.
+  // This cancels the poll timer and discards pending callbacks.
+  if (rcu_manager_) {
+    rcu_manager_->Stop();
   }
 
   // Stop PMD threads with timeout
