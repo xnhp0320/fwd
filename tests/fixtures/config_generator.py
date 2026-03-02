@@ -43,6 +43,8 @@ class TestConfigGenerator:
         num_ports: int = 2,
         num_threads: int = 2,
         num_queues: int = 2,
+        num_rx_queues: int = None,
+        num_tx_queues: int = None,
         use_hugepages: bool = False
     ) -> Dict[str, Any]:
         """
@@ -51,7 +53,9 @@ class TestConfigGenerator:
         Args:
             num_ports: Number of virtual ports (1-2)
             num_threads: Number of PMD threads (1-2)
-            num_queues: Number of queues per port (1-2)
+            num_queues: Default number of queues per port for both RX and TX (1-2)
+            num_rx_queues: Override RX queues per port (defaults to num_queues)
+            num_tx_queues: Override TX queues per port (defaults to num_queues)
             use_hugepages: Whether to use hugepages (default: False)
         
         Returns:
@@ -60,13 +64,20 @@ class TestConfigGenerator:
         Raises:
             ValueError: If parameters are out of valid range
         """
+        if num_rx_queues is None:
+            num_rx_queues = num_queues
+        if num_tx_queues is None:
+            num_tx_queues = num_queues
+
         # Validate parameters (limited for VM resource constraints)
         if not 1 <= num_ports <= 2:
             raise ValueError("num_ports must be 1-2 (VM resource constraint)")
         if not 1 <= num_threads <= 2:
             raise ValueError("num_threads must be 1-2 (VM resource constraint)")
-        if not 1 <= num_queues <= 2:
-            raise ValueError("num_queues must be 1-2 (VM resource constraint)")
+        if not 1 <= num_rx_queues <= 2:
+            raise ValueError("num_rx_queues must be 1-2 (VM resource constraint)")
+        if not 1 <= num_tx_queues <= 2:
+            raise ValueError("num_tx_queues must be 1-2 (VM resource constraint)")
         
         # Generate core mask (main lcore + worker lcores)
         core_mask = TestConfigGenerator.generate_core_mask(num_threads)
@@ -89,8 +100,8 @@ class TestConfigGenerator:
         for port_id in range(num_ports):
             port = PortConfig(
                 port_id=port_id,
-                num_rx_queues=num_queues,
-                num_tx_queues=num_queues,
+                num_rx_queues=num_rx_queues,
+                num_tx_queues=num_tx_queues,
                 num_descriptors=512,  # Small for testing
                 mbuf_pool_size=4096,  # Sufficient for test workloads
                 mbuf_size=2048        # Standard Ethernet
@@ -99,7 +110,7 @@ class TestConfigGenerator:
         
         # Distribute queues across threads
         pmd_threads = TestConfigGenerator.distribute_queues(
-            num_ports, num_queues, num_threads
+            num_ports, num_rx_queues, num_tx_queues, num_threads
         )
         
         # Build configuration
@@ -139,7 +150,8 @@ class TestConfigGenerator:
     @staticmethod
     def distribute_queues(
         num_ports: int,
-        num_queues: int,
+        num_rx_queues: int,
+        num_tx_queues: int,
         num_threads: int
     ) -> List[PmdThreadConfig]:
         """
@@ -148,19 +160,16 @@ class TestConfigGenerator:
         Strategy:
         - Round-robin assignment of (port, queue) pairs to threads
         - Each thread gets approximately equal number of queues
+        - RX and TX queues are distributed independently
         
         Args:
             num_ports: Number of ports
-            num_queues: Number of queues per port
+            num_rx_queues: Number of RX queues per port
+            num_tx_queues: Number of TX queues per port
             num_threads: Number of PMD threads
         
         Returns:
             List of PMD thread configurations
-        
-        Example:
-            With 2 ports, 2 queues, 2 threads:
-            - Thread 1 (lcore 1): port0/queue0, port1/queue0
-            - Thread 2 (lcore 2): port0/queue1, port1/queue1
         """
         # Create thread configs
         threads = []
@@ -172,12 +181,19 @@ class TestConfigGenerator:
                 tx_queues=[]
             ))
         
-        # Distribute queues round-robin
+        # Distribute RX queues round-robin
         thread_idx = 0
         for port_id in range(num_ports):
-            for queue_id in range(num_queues):
+            for queue_id in range(num_rx_queues):
                 assignment = {"port_id": port_id, "queue_id": queue_id}
                 threads[thread_idx].rx_queues.append(assignment)
+                thread_idx = (thread_idx + 1) % num_threads
+        
+        # Distribute TX queues round-robin
+        thread_idx = 0
+        for port_id in range(num_ports):
+            for queue_id in range(num_tx_queues):
+                assignment = {"port_id": port_id, "queue_id": queue_id}
                 threads[thread_idx].tx_queues.append(assignment)
                 thread_idx = (thread_idx + 1) % num_threads
         

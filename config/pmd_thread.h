@@ -7,6 +7,7 @@
 
 #include "absl/status/status.h"
 #include "config/dpdk_config.h"
+#include "processor/packet_stats.h"
 
 struct rte_rcu_qsbr;
 
@@ -35,6 +36,9 @@ class PmdThread {
     return config_.tx_queues;
   }
 
+  // Get per-thread packet stats
+  const processor::PacketStats* GetStats() const { return &stats_; }
+
   // Static entry point for DPDK remote launch
   // This is the function passed to rte_eal_remote_launch
   static int RunStub(void* arg);
@@ -53,6 +57,9 @@ class PmdThread {
   // When non-null, Run() passes it to the launcher so the hot loop
   // calls rte_rcu_qsbr_quiescent() after each processing batch.
   struct rte_rcu_qsbr* qsbr_var_ = nullptr;
+
+  // Per-thread packet/byte statistics.
+  processor::PacketStats stats_;
 }
 ;
 

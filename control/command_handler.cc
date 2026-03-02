@@ -4,6 +4,7 @@
 
 #include "absl/strings/str_cat.h"
 #include "config/pmd_thread_manager.h"
+#include "config/pmd_thread.h"
 #include "nlohmann/json.hpp"
 
 namespace dpdk_config {
@@ -96,6 +97,8 @@ CommandHandler::CommandResponse CommandHandler::ExecuteCommand(
     return HandleStatus(request.params);
   } else if (request.command == "get_threads") {
     return HandleGetThreads(request.params);
+  } else if (request.command == "get_stats") {
+    return HandleGetStats(request.params);
   } else {
     // Unknown command
     CommandResponse response;
@@ -163,6 +166,36 @@ CommandHandler::CommandResponse CommandHandler::HandleGetThreads(
 
   response.result["threads"] = threads_array;
 
+  return response;
+}
+
+CommandHandler::CommandResponse CommandHandler::HandleGetStats(
+    const nlohmann::json& params) {
+  CommandResponse response;
+  response.status = "success";
+
+  json threads_array = json::array();
+  uint64_t total_packets = 0;
+  uint64_t total_bytes = 0;
+
+  if (thread_manager_) {
+    for (uint32_t lcore_id : thread_manager_->GetLcoreIds()) {
+      PmdThread* thread = thread_manager_->GetThread(lcore_id);
+      if (thread && thread->GetStats()) {
+        uint64_t pkts = thread->GetStats()->GetPackets();
+        uint64_t byts = thread->GetStats()->GetBytes();
+        threads_array.push_back({{"lcore_id", lcore_id},
+                                 {"packets", pkts},
+                                 {"bytes", byts}});
+        total_packets += pkts;
+        total_bytes += byts;
+      }
+    }
+  }
+
+  response.result = {{"threads", threads_array},
+                     {"total", {{"packets", total_packets},
+                                {"bytes", total_bytes}}}};
   return response;
 }
 

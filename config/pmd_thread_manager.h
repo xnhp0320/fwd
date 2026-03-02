@@ -9,6 +9,7 @@
 #include "absl/status/status.h"
 #include "config/dpdk_config.h"
 #include "config/pmd_thread.h"
+#include "config/port_manager.h"
 
 namespace rcu {
 class RcuManager;
@@ -21,6 +22,10 @@ namespace dpdk_config {
 class PMDThreadManager {
  public:
   PMDThreadManager() = default;
+
+  // Set the port manager. Transfers ownership so ports remain alive
+  // for the lifetime of this manager (and thus the PMD threads).
+  void SetPortManager(std::unique_ptr<PortManager> port_manager);
 
   // Set the RCU manager. When set, LaunchThreads will register threads
   // and the hot loop will report quiescent states.
@@ -56,6 +61,9 @@ class PMDThreadManager {
 
   // Optional RCU manager for thread registration and QSBR support. Not owned.
   rcu::RcuManager* rcu_manager_ = nullptr;
+
+  // Owns the ports so they stay alive while threads are running.
+  std::unique_ptr<PortManager> port_manager_;
 
   // Map of lcore_id to PMDThread instances
   std::unordered_map<uint32_t, std::unique_ptr<PmdThread>> threads_;

@@ -90,30 +90,33 @@ absl::StatusOr<std::unique_ptr<PMDThreadManager>> DpdkInitializer::Initialize(
     std::cout << "DPDK initialization successful\n";
   }
 
+  // Create PMDThreadManager and launch threads if configured
+  auto thread_manager = std::make_unique<PMDThreadManager>();
+
   // Initialize ports if configured
   if (!config.ports.empty()) {
-    PortManager port_manager;
+    auto port_manager = std::make_unique<PortManager>();
     
     // Initialize all ports
-    absl::Status init_status = port_manager.InitializePorts(config.ports);
+    absl::Status init_status = port_manager->InitializePorts(config.ports);
     if (!init_status.ok()) {
       return init_status;
     }
     
     // Start all ports
-    absl::Status start_status = port_manager.StartAllPorts();
+    absl::Status start_status = port_manager->StartAllPorts();
     if (!start_status.ok()) {
       return start_status;
     }
     
     if (verbose) {
       std::cout << "Successfully initialized and started " 
-                << port_manager.GetPortCount() << " port(s)\n";
+                << port_manager->GetPortCount() << " port(s)\n";
     }
-  }
 
-  // Create PMDThreadManager and launch threads if configured
-  auto thread_manager = std::make_unique<PMDThreadManager>();
+    // Transfer port ownership so ports stay alive while threads run
+    thread_manager->SetPortManager(std::move(port_manager));
+  }
   
   if (!config.pmd_threads.empty()) {
     absl::Status launch_status = thread_manager->LaunchThreads(config.pmd_threads, verbose);

@@ -5,3 +5,4 @@ bazel-dpdk_bazel_xsight
 bazel-out
 bazel-testlogs
 tests/test-results/
+tests/.venv/

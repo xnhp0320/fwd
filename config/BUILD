@@ -84,6 +84,8 @@ cc_library(
     deps = [
         ":dpdk_config",
         "//:dpdk_lib",
+        "//processor:packet_stats",
+        "//processor:processor_context",
         "//processor:processor_registry",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/strings",
@@ -99,6 +101,7 @@ cc_library(
     deps = [
         ":dpdk_config",
         ":pmd_thread",
+        ":port_manager",
         "//:dpdk_lib",
         "//processor:processor_registry",
         "//processor:simple_forwarding_processor",

@@ -12,3 +12,10 @@ pytest-xdist>=3.0.0
 
 # JSON handling (usually included with Python, but explicit for clarity)
 # json is part of Python standard library
+
+# Packet crafting and verification
+scapy>=2.5.0
+ptf>=0.9.3
+
+# Property-based testing
+hypothesis>=6.0.0

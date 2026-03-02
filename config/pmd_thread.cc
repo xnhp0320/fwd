@@ -7,6 +7,7 @@
 #include <rte_mbuf.h>
 
 #include "absl/strings/str_cat.h"
+#include "processor/processor_context.h"
 #include "processor/processor_registry.h"
 
 namespace dpdk_config {
@@ -40,7 +41,8 @@ int PmdThread::Run() {
   }
 
   // Enter the monomorphized hot loop.
-  return (*entry_or)->launcher(config_, stop_flag_ptr_, qsbr_var_);
+  return (*entry_or)->launcher(config_, stop_flag_ptr_, qsbr_var_,
+                               processor::ProcessorContext{&stats_});
 }
 
 }  // namespace dpdk_config

@@ -10,6 +10,10 @@
 
 namespace dpdk_config {
 
+void PMDThreadManager::SetPortManager(std::unique_ptr<PortManager> port_manager) {
+  port_manager_ = std::move(port_manager);
+}
+
 void PMDThreadManager::SetRcuManager(rcu::RcuManager* rcu_manager) {
   rcu_manager_ = rcu_manager;
 }

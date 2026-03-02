@@ -3,7 +3,6 @@
 #include <rte_ethdev.h>
 #include <rte_mbuf.h>
 
-#include "absl/strings/str_cat.h"
 #include "processor/processor_registry.h"
 #include "rxtx/batch.h"
 
@@ -11,12 +10,7 @@ namespace processor {
 
 absl::Status SimpleForwardingProcessor::check_impl(
     const std::vector<dpdk_config::QueueAssignment>& /*rx_queues*/,
-    const std::vector<dpdk_config::QueueAssignment>& tx_queues) {
-  if (tx_queues.size() != 1) {
-    return absl::InvalidArgumentError(absl::StrCat(
-        "SimpleForwardingProcessor requires exactly 1 TX queue, but ",
-        tx_queues.size(), " were assigned"));
-  }
+    const std::vector<dpdk_config::QueueAssignment>& /*tx_queues*/) {
   return absl::OkStatus();
 }
 
@@ -31,6 +25,15 @@ void SimpleForwardingProcessor::process_impl() {
     if (batch.Count() == 0) {
       batch.Release();
       continue;
+    }
+
+    // Record per-thread stats before transmitting.
+    if (stats_) {
+      uint64_t total_bytes = 0;
+      for (uint16_t i = 0; i < batch.Count(); ++i) {
+        total_bytes += rte_pktmbuf_pkt_len(batch.Data()[i]);
+      }
+      stats_->RecordBatch(batch.Count(), total_bytes);
     }
 
     uint16_t sent =

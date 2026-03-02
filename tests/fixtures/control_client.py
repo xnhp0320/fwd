@@ -154,6 +154,11 @@ class ControlClient:
             Thread information response dictionary
         """
         return self.send_command("get_threads")
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Send get_stats command and return parsed response."""
+        return self.send_command("get_stats")
+
     
     def shutdown(self) -> Dict[str, Any]:
         """

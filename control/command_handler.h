@@ -43,6 +43,7 @@ class CommandHandler {
   CommandResponse HandleShutdown(const nlohmann::json& params);
   CommandResponse HandleStatus(const nlohmann::json& params);
   CommandResponse HandleGetThreads(const nlohmann::json& params);
+  CommandResponse HandleGetStats(const nlohmann::json& params);
 
   PMDThreadManager* thread_manager_;  // Not owned
   std::function<void()> shutdown_callback_;

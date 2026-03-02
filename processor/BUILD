@@ -2,6 +2,19 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 
 package(default_visibility = ["//visibility:public"])
 
+# Per-thread packet/byte statistics counters (header-only)
+cc_library(
+    name = "packet_stats",
+    hdrs = ["packet_stats.h"],
+)
+
+# Extensible per-thread context for processor launchers (header-only)
+cc_library(
+    name = "processor_context",
+    hdrs = ["processor_context.h"],
+    deps = [":packet_stats"],
+)
+
 # CRTP base class for packet processors (header-only)
 cc_library(
     name = "packet_processor_base",
@@ -19,6 +32,7 @@ cc_library(
     hdrs = ["processor_registry.h"],
     deps = [
         ":packet_processor_base",
+        ":processor_context",
         "//config:dpdk_config",
         "//:dpdk_lib",
         "@abseil-cpp//absl/container:flat_hash_map",
@@ -29,12 +43,16 @@ cc_library(
 )
 
 # Simple forwarding processor: drains all RX queues into a single TX queue
+# alwayslink ensures the static REGISTER_PROCESSOR initializer is not
+# stripped by the linker when this library is a transitive dependency.
 cc_library(
     name = "simple_forwarding_processor",
     srcs = ["simple_forwarding_processor.cc"],
     hdrs = ["simple_forwarding_processor.h"],
+    alwayslink = True,
     deps = [
         ":packet_processor_base",
+        ":packet_stats",
         ":processor_registry",
         "//config:dpdk_config",
         "//rxtx:batch",

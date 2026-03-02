@@ -13,15 +13,18 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "config/dpdk_config.h"
+#include "processor/processor_context.h"
 
 namespace processor {
 
 // A launcher function runs the entire monomorphized hot loop for a
 // specific processor type. It is called once per PMD thread.
 // Returns 0 on success, non-zero on error.
-using LauncherFn = std::function<int(const dpdk_config::PmdThreadConfig& config,
-                                     std::atomic<bool>* stop_flag,
-                                     struct rte_rcu_qsbr* qsbr_var)>;
+using LauncherFn = std::function<int(
+    const dpdk_config::PmdThreadConfig& config,
+    std::atomic<bool>* stop_flag,
+    struct rte_rcu_qsbr* qsbr_var,
+    const processor::ProcessorContext& ctx)>;
 
 // A check function validates queue assignments for a processor type.
 // Called at startup before entering the hot loop.
@@ -66,8 +69,9 @@ ProcessorEntry MakeProcessorEntry() {
       .launcher =
           [](const dpdk_config::PmdThreadConfig& config,
              std::atomic<bool>* stop_flag,
-             struct rte_rcu_qsbr* qsbr_var) -> int {
-        ProcessorType proc(config);
+             struct rte_rcu_qsbr* qsbr_var,
+             const processor::ProcessorContext& ctx) -> int {
+        ProcessorType proc(config, ctx.stats);
         while (!stop_flag->load(std::memory_order_relaxed)) {
           proc.process_impl();  // Direct call — compiler knows exact type.
           if (qsbr_var) {
@@ -92,11 +96,11 @@ ProcessorEntry MakeProcessorEntry() {
 
 // Macro for self-registration in a .cc file.
 // Usage: REGISTER_PROCESSOR("simple_forwarding", SimpleForwardingProcessor);
-#define REGISTER_PROCESSOR(name, type)                    \
-  static bool registered_##type = [] {                    \
-    ::processor::ProcessorRegistry::Instance().Register(  \
-        name, ::processor::MakeProcessorEntry<type>());   \
-    return true;                                          \
+#define REGISTER_PROCESSOR(name, type)                              \
+  __attribute__((used)) static bool registered_##type = [] {        \
+    ::processor::ProcessorRegistry::Instance().Register(            \
+        name, ::processor::MakeProcessorEntry<type>());             \
+    return true;                                                    \
   }()
 
 }  // namespace processor
