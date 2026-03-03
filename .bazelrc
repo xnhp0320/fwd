@@ -1,2 +1,6 @@
 common --spawn_strategy=local
 common --repo_env=BAZEL_CONLYOPTS="-std=gnu17"
+
+# Force pure Go builds (no cgo) to avoid rules_go trying to resolve
+# @@bazel_tools//tools/osx:current_xcode_config on Linux.
+build --@rules_go//go/config:pure
