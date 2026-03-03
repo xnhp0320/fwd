@@ -34,6 +34,6 @@ new_local_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:local.
 new_local_repository(
     name = "dpdk",
     path = "/usr/local",
-    build_file = "//dpdk:BUILD.bazel",
+    build_file = "third_party/dpdk.BUILD",
 )
 

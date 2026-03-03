@@ -1,32 +1,27 @@
-# MODULE.bazel.local.example
-# Copy this to MODULE.bazel.local and customize for your machine
-# MODULE.bazel.local is gitignored and won't be committed
+# MODULE.bazel.local — Machine-specific DPDK configuration
+# Copy this file to MODULE.bazel.local and adjust the path for your machine.
+# MODULE.bazel.local is gitignored and won't be committed.
+#
+# The "path" should point to your DPDK installation root, where:
+#   {path}/include/  contains DPDK headers (rte_mbuf.h, etc.)
+#   {path}/lib/      contains DPDK shared libraries (librte_eal.so, etc.)
+#
+# If your libs are in a subdirectory (e.g. lib/aarch64-linux-gnu/),
+# you may need to add that path to /etc/ld.so.conf.d/ and run ldconfig,
+# or add a -L flag in third_party/dpdk.BUILD.
 
-# For DPDK at /usr/local with aarch64 libs (current machine):
-# No MODULE.bazel.local needed - this is the default in MODULE.bazel
+new_local_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:local.bzl", "new_local_repository")
 
-# For DPDK at a custom location, uncomment and modify:
-# new_local_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:local.bzl", "new_local_repository")
-# 
+# Example: DPDK installed system-wide at /usr/local
+new_local_repository(
+    name = "dpdk",
+    path = "/usr/local",
+    build_file = "third_party/dpdk.BUILD",
+)
+
+# Example: DPDK at a custom location
 # new_local_repository(
 #     name = "dpdk",
-#     path = "/opt/dpdk-23.11",  # Change to your DPDK installation path
-#     build_file = "dpdk_custom.BUILD",  # Use a custom BUILD file with your lib path
-# )
-
-# Then create dpdk_custom.BUILD with your specific lib directory:
-# load("@rules_cc//cc:defs.bzl", "cc_library")
-# 
-# cc_library(
-#     name = "dpdk",
-#     hdrs = glob(["include/**/*.h"]),
-#     includes = ["include"],
-#     linkopts = [
-#         "-L/opt/dpdk-23.11/lib/x86_64-linux-gnu",  # Your custom lib path
-#         "-Wl,--as-needed",
-#         "-lrte_node",
-#         # ... (copy all the -lrte_* flags from dpdk/BUILD.bazel)
-#     ],
-#     copts = ["-include rte_config.h"],
-#     visibility = ["//visibility:public"],
+#     path = "/opt/xsl-dpdk",
+#     build_file = "third_party/dpdk.BUILD",
 # )

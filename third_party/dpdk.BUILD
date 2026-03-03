@@ -1,14 +1,22 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
 
-# This BUILD file is a template for DPDK external repository.
-# It will be instantiated via new_local_repository in MODULE.bazel
-# with the actual DPDK installation path.
+# Build file template for DPDK external repository.
+# Used by new_local_repository in MODULE.bazel.
+# The glob runs relative to the "path" set in new_local_repository.
+#
+# IMPORTANT: If your DPDK libs are in a non-standard path that the linker
+# can't find automatically, add a -L flag below. For example:
+#   "-L/opt/xsl-dpdk/lib",
+#   "-L/usr/local/lib/aarch64-linux-gnu",
+#
+# The default (no -L) works when DPDK libs are in standard ld search paths
+# (e.g. /usr/local/lib, or configured via /etc/ld.so.conf.d/).
 
 cc_library(
     name = "dpdk",
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
     includes = ["include"],
     linkopts = [
-        "-L/usr/local/lib/aarch64-linux-gnu",
         "-Wl,--as-needed",
         "-lrte_node",
         "-lrte_graph",
