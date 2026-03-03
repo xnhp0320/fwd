@@ -4,3 +4,22 @@ common --repo_env=BAZEL_CONLYOPTS="-std=gnu17"
 # Force pure Go builds (no cgo) to avoid rules_go trying to resolve
 # @@bazel_tools//tools/osx:current_xcode_config on Linux.
 build --@rules_go//go/config:pure
+
+# --- Build configurations ---
+
+# Default (fastbuild): debug info, no optimization — already the Bazel default.
+
+# Release: high optimization, no debug info, NDEBUG defined.
+# Usage: bazel build --config=release //...
+build:release --compilation_mode=opt
+build:release --copt=-O3
+build:release --copt=-DNDEBUG
+build:release --strip=always
+build:release --linkopt=-Wl,-s
+
+# Release with debug info (for profiling / perf).
+# Usage: bazel build --config=release-dbg //...
+build:release-dbg --compilation_mode=opt
+build:release-dbg --copt=-O3
+build:release-dbg --copt=-DNDEBUG
+build:release-dbg --copt=-g

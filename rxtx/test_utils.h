@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <stdexcept>
+#include <unistd.h>
 
 #include <rte_eal.h>
 #include <rte_mbuf.h>
@@ -18,16 +19,22 @@ namespace testing {
 
 // Initialize DPDK EAL once for the entire test process.
 // Uses --no-huge and minimal log level so tests can run without hugepages.
+// Each test process gets a unique --file-prefix based on its PID so that
+// parallel Bazel test runs don't collide on /var/run/dpdk/ runtime files.
 inline bool InitEal() {
   static bool initialized = false;
   if (initialized) return true;
 
-  // Minimal EAL arguments for test environments.
+  // Build a per-process file prefix to avoid DPDK runtime file collisions.
+  static char prefix_buf[64];
+  snprintf(prefix_buf, sizeof(prefix_buf), "--file-prefix=test_%d", getpid());
+
   const char* argv[] = {
       "test",
       "--no-huge",
       "--no-pci",
       "--log-level=1",
+      prefix_buf,
   };
   int argc = sizeof(argv) / sizeof(argv[0]);
 
