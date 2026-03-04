@@ -6,6 +6,9 @@
 #include <cstdint>
 #include <new>
 #include <rte_mbuf.h>
+#include <rte_prefetch.h>
+
+#include "rxtx/packet_metadata.h"
 
 namespace rxtx {
 
@@ -15,8 +18,8 @@ inline constexpr std::size_t kMbufStructSize = 128;
 // Cache line size
 inline constexpr std::size_t kCacheLineSize = 64;
 
-// Metadata region size (zero initially, reserved for future use)
-inline constexpr std::size_t kMetadataSize = 0;
+// Metadata region size — sized to hold PacketMetadata.
+inline constexpr std::size_t kMetadataSize = sizeof(PacketMetadata);
 
 class Packet {
  public:
@@ -44,6 +47,19 @@ class Packet {
   rte_mbuf* Mbuf() { return &mbuf_; }
   const rte_mbuf* Mbuf() const { return &mbuf_; }
 
+  // Access the PacketMetadata stored after the mbuf.
+  PacketMetadata& Metadata() { return metadata_; }
+  const PacketMetadata& Metadata() const { return metadata_; }
+
+  // Prefetch packet data and metadata for upcoming access.
+  // Defined inline so the compiler can interleave prefetch instructions
+  // with the caller's loop body. Kept as a named function so prefetch
+  // targets can be tuned in one place.
+  void Prefetch() {
+    rte_prefetch0(Data());
+    rte_prefetch0(&metadata_);
+  }
+
   // Free the underlying mbuf back to its mempool
   void Free() {
     rte_pktmbuf_free(&mbuf_);
@@ -62,9 +78,10 @@ class Packet {
   // This prevents external default construction while allowing from() to work.
   Packet() = default;
 
-  rte_mbuf mbuf_;  // occupies first 128 bytes
-  // Metadata_Region would follow here when kMetadataSize > 0
-  // alignas(kCacheLineSize) std::array<uint8_t, kMetadataSize> metadata_;
+  friend struct PacketMetadata;
+
+  rte_mbuf mbuf_;              // occupies first 128 bytes
+  PacketMetadata metadata_;    // metadata region immediately after mbuf
 };
 
 }  // namespace rxtx

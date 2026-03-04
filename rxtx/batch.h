@@ -53,6 +53,23 @@ class Batch {
       fn(pkt);
     }
   }
+
+  // Apply fn to each packet in order [0, count), prefetching the packet
+  // at i+N when i+N < count. When N == 0 the prefetch branch is
+  // eliminated at compile time, making this identical to ForEach.
+  template <uint16_t N, typename Fn>
+  void PrefetchForEach(Fn&& fn) {
+    for (uint16_t i = 0; i < count_; ++i) {
+      if constexpr (N > 0) {
+        if (i + N < count_) {
+          Packet::from(mbufs_[i + N]).Prefetch();
+        }
+      }
+      Packet& pkt = Packet::from(mbufs_[i]);
+      fn(pkt);
+    }
+  }
+
   // Retain packets where fn returns true. Rejected mbufs are NOT freed —
   // they are simply excluded from the compacted result.
   // Retained packets are compacted to contiguous positions [0, new_count).
