@@ -124,3 +124,81 @@ cc_test(
         "-latomic",
     ],
 )
+
+cc_library(
+    name = "allocator",
+    hdrs = ["allocator.h"],
+    deps = [
+        "//rxtx:packet",
+        "//:dpdk_lib",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "list_slab",
+    hdrs = ["list_slab.h"],
+    deps = [
+        "//rxtx:allocator",
+        "@boost.intrusive",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_test(
+    name = "list_slab_test",
+    size = "small",
+    srcs = ["list_slab_test.cc"],
+    deps = [
+        "//rxtx:list_slab",
+        "//rxtx:allocator",
+        "@boost.intrusive",
+        "@googletest//:gtest",
+    ],
+)
+
+cc_library(
+    name = "lookup_entry",
+    hdrs = ["lookup_entry.h"],
+    deps = [
+        "//rxtx:packet_metadata",
+        "//rxtx:packet",
+        "@boost.intrusive",
+        "@abseil-cpp//absl/hash",
+        "@abseil-cpp//absl/strings",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "fast_lookup_table",
+    hdrs = ["fast_lookup_table.h"],
+    deps = [
+        "//rxtx:list_slab",
+        "//rxtx:lookup_entry",
+        "//rxtx:allocator",
+        "//rxtx:packet_metadata",
+        "@abseil-cpp//absl/container:flat_hash_set",
+        "@abseil-cpp//absl/hash",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_test(
+    name = "fast_lookup_table_test",
+    size = "small",
+    srcs = ["fast_lookup_table_test.cc"],
+    deps = [
+        "//rxtx:fast_lookup_table",
+        "//rxtx:list_slab",
+        "//rxtx:lookup_entry",
+        "//rxtx:allocator",
+        "//rxtx:packet_metadata",
+        "//rxtx:packet",
+        "@googletest//:gtest",
+    ],
+    linkopts = [
+        "-lnuma",
+        "-latomic",
+    ],
+)
