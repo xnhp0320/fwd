@@ -3,6 +3,7 @@
 
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"
 #include "absl/status/status.h"
 #include "config/dpdk_config.h"
 #include "processor/packet_processor_base.h"
@@ -26,6 +27,12 @@ class SimpleForwardingProcessor
 
   // Process: drain all RX queues into the single TX queue.
   void process_impl();
+
+  // Validate per-processor configuration parameters.
+  // SimpleForwardingProcessor accepts no parameters; any non-empty map is
+  // rejected with InvalidArgument listing the unrecognized key.
+  static absl::Status CheckParams(
+      const absl::flat_hash_map<std::string, std::string>& params);
 
   // Read-only access to this processor's stats counters.
   const PacketStats& GetStats() const { return *stats_; }

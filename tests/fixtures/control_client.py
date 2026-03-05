@@ -159,6 +159,11 @@ class ControlClient:
         """Send get_stats command and return parsed response."""
         return self.send_command("get_stats")
 
+    def get_flow_table(self) -> Dict[str, Any]:
+        """Send get_flow_table command and return parsed response."""
+        return self.send_command("get_flow_table")
+
+
     
     def shutdown(self) -> Dict[str, Any]:
         """

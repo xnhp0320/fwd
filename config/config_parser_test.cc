@@ -295,6 +295,84 @@ int main() {
              result.value().additional_params[0].first == "custom_field");
   }
 
+  // Test parsing PMD thread with processor_params
+  {
+    std::string json_content = R"({
+      "pmd_threads": [
+        {
+          "lcore_id": 5,
+          "processor": "five_tuple_forwarding",
+          "processor_params": {
+            "capacity": "131072",
+            "mode": "strict"
+          }
+        }
+      ]
+    })";
+
+    auto result = ConfigParser::ParseString(json_content);
+    TestCase("Parse PMD thread with processor_params",
+             result.ok() &&
+             result.value().pmd_threads.size() == 1 &&
+             result.value().pmd_threads[0].processor_params.size() == 2 &&
+             result.value().pmd_threads[0].processor_params.at("capacity") == "131072" &&
+             result.value().pmd_threads[0].processor_params.at("mode") == "strict");
+  }
+
+  // Test parsing PMD thread without processor_params produces empty map
+  {
+    std::string json_content = R"({
+      "pmd_threads": [
+        {
+          "lcore_id": 6,
+          "processor": "simple_forwarding"
+        }
+      ]
+    })";
+
+    auto result = ConfigParser::ParseString(json_content);
+    TestCase("Absent processor_params produces empty map",
+             result.ok() &&
+             result.value().pmd_threads.size() == 1 &&
+             result.value().pmd_threads[0].processor_params.empty());
+  }
+
+  // Test error when processor_params is not an object
+  {
+    std::string json_content = R"({
+      "pmd_threads": [
+        {
+          "lcore_id": 7,
+          "processor_params": "invalid"
+        }
+      ]
+    })";
+
+    auto result = ConfigParser::ParseString(json_content);
+    TestCase("Error when processor_params is not an object",
+             !result.ok() &&
+             result.status().message().find("must be an object") != std::string::npos);
+  }
+
+  // Test error when processor_params value is not a string
+  {
+    std::string json_content = R"({
+      "pmd_threads": [
+        {
+          "lcore_id": 8,
+          "processor_params": {
+            "capacity": 42
+          }
+        }
+      ]
+    })";
+
+    auto result = ConfigParser::ParseString(json_content);
+    TestCase("Error when processor_params value is not a string",
+             !result.ok() &&
+             result.status().message().find("must be a string") != std::string::npos);
+  }
+
   std::cout << "\n";
   if (failed_tests == 0) {
     std::cout << "All tests passed!\n";

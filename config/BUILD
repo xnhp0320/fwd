@@ -5,6 +5,9 @@ cc_library(
     name = "dpdk_config",
     hdrs = ["dpdk_config.h"],
     visibility = ["//visibility:public"],
+    deps = [
+        "@abseil-cpp//absl/container:flat_hash_map",
+    ],
 )
 
 # JSON configuration parser
@@ -29,6 +32,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":dpdk_config",
+        "//processor:processor_registry",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/strings",
     ],
@@ -147,6 +151,7 @@ cc_test(
     deps = [
         ":config_validator",
         ":dpdk_config",
+        "//processor:processor_registry",
     ],
 )
 

@@ -14,7 +14,9 @@ namespace dpdk_config {
 
 PmdThread::PmdThread(const PmdThreadConfig& config, std::atomic<bool>* stop_flag,
                      struct rte_rcu_qsbr* qsbr_var)
-    : config_(config), stop_flag_ptr_(stop_flag), qsbr_var_(qsbr_var) {}
+    : config_(config), stop_flag_ptr_(stop_flag), qsbr_var_(qsbr_var) {
+  ctx_.stats = &stats_;
+}
 
 int PmdThread::RunStub(void* arg) {
   if (arg == nullptr) {
@@ -41,8 +43,7 @@ int PmdThread::Run() {
   }
 
   // Enter the monomorphized hot loop.
-  return (*entry_or)->launcher(config_, stop_flag_ptr_, qsbr_var_,
-                               processor::ProcessorContext{&stats_});
+  return (*entry_or)->launcher(config_, stop_flag_ptr_, qsbr_var_, ctx_);
 }
 
 }  // namespace dpdk_config

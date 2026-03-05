@@ -7,6 +7,8 @@
 #include <utility>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"
+
 namespace dpdk_config {
 
 // Queue assignment structure for PMD thread configuration
@@ -30,6 +32,9 @@ struct PmdThreadConfig {
 
   // Processor name for this PMD thread (empty string = use default processor)
   std::string processor_name;
+
+  // Per-processor key-value parameters parsed from the JSON config file
+  absl::flat_hash_map<std::string, std::string> processor_params;
 };
 
 // Port configuration structure for DPDK port initialization

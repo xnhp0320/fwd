@@ -3,7 +3,7 @@
 import json
 import tempfile
 import os
-from config_generator import TestConfigGenerator
+from fixtures.config_generator import TestConfigGenerator
 
 
 def test_generate_config_basic():
@@ -57,7 +57,8 @@ def test_distribute_queues():
     """Test queue distribution across threads."""
     threads = TestConfigGenerator.distribute_queues(
         num_ports=2,
-        num_queues=2,
+        num_rx_queues=2,
+        num_tx_queues=2,
         num_threads=2
     )
     
@@ -135,7 +136,7 @@ def test_parameter_validation():
         TestConfigGenerator.generate_config(num_queues=3)
         assert False, "Should raise ValueError for num_queues > 2"
     except ValueError as e:
-        assert "num_queues" in str(e)
+        assert "num_rx_queues" in str(e) or "num_queues" in str(e)
 
 
 if __name__ == "__main__":

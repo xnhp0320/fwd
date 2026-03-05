@@ -45,7 +45,9 @@ class TestConfigGenerator:
         num_queues: int = 2,
         num_rx_queues: int = None,
         num_tx_queues: int = None,
-        use_hugepages: bool = False
+        use_hugepages: bool = False,
+        processor_name: str = None,
+        processor_params: Dict[str, str] = None
     ) -> Dict[str, Any]:
         """
         Generate a test configuration with net_tap virtual PMD.
@@ -57,6 +59,8 @@ class TestConfigGenerator:
             num_rx_queues: Override RX queues per port (defaults to num_queues)
             num_tx_queues: Override TX queues per port (defaults to num_queues)
             use_hugepages: Whether to use hugepages (default: False)
+            processor_name: Optional processor name to include in each pmd_threads entry
+            processor_params: Optional dict of processor parameters to include in each pmd_threads entry
         
         Returns:
             Dictionary representing dpdk.json configuration
@@ -113,13 +117,23 @@ class TestConfigGenerator:
             num_ports, num_rx_queues, num_tx_queues, num_threads
         )
         
+        # Build pmd_threads entries, optionally including processor settings
+        pmd_thread_dicts = []
+        for t in pmd_threads:
+            entry = asdict(t)
+            if processor_name is not None:
+                entry["processor"] = processor_name
+            if processor_params is not None:
+                entry["processor_params"] = processor_params
+            pmd_thread_dicts.append(entry)
+
         # Build configuration
         config = {
             "core_mask": core_mask,
             "memory_channels": 4,
             "additional_params": additional_params,
             "ports": ports,
-            "pmd_threads": [asdict(t) for t in pmd_threads]
+            "pmd_threads": pmd_thread_dicts
         }
         
         return config

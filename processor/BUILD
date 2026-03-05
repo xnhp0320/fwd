@@ -20,6 +20,7 @@ cc_library(
     name = "packet_processor_base",
     hdrs = ["packet_processor_base.h"],
     deps = [
+        ":processor_context",
         "//config:dpdk_config",
         "@abseil-cpp//absl/status",
     ],
@@ -57,7 +58,50 @@ cc_library(
         "//config:dpdk_config",
         "//rxtx:batch",
         "//:dpdk_lib",
+        "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/strings",
+    ],
+)
+
+# Five-tuple forwarding processor: parses five-tuple, performs flow-table
+# lookup/insert via FastLookupTable, and forwards packets to TX queue 0.
+# alwayslink ensures the static REGISTER_PROCESSOR initializer is not
+# stripped by the linker when this library is a transitive dependency.
+cc_library(
+    name = "five_tuple_forwarding_processor",
+    srcs = ["five_tuple_forwarding_processor.cc"],
+    hdrs = ["five_tuple_forwarding_processor.h"],
+    alwayslink = True,
+    deps = [
+        ":packet_processor_base",
+        ":packet_stats",
+        ":processor_context",
+        ":processor_registry",
+        "//config:dpdk_config",
+        "//rxtx:batch",
+        "//rxtx:fast_lookup_table",
+        "//rxtx:packet",
+        "//rxtx:packet_metadata",
+        "//rxtx:packet_metadata_impl",
+        "//:dpdk_lib",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/strings",
+    ],
+)
+
+# Five-tuple forwarding processor unit tests
+cc_test(
+    name = "five_tuple_forwarding_processor_test",
+    size = "small",
+    srcs = ["five_tuple_forwarding_processor_test.cc"],
+    deps = [
+        ":five_tuple_forwarding_processor",
+        ":processor_registry",
+        "//config:dpdk_config",
+        "//rxtx:packet_metadata_impl",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/status",
     ],
 )

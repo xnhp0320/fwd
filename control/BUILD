@@ -8,7 +8,11 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//config:pmd_thread_manager",
+        "//rcu:rcu_manager",
+        "//rxtx:fast_lookup_table",
+        "//rxtx:lookup_entry",
         "//:dpdk_lib",
+        "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/status:statusor",
         "@abseil-cpp//absl/strings",
         "@nlohmann_json//:json",
@@ -58,15 +62,16 @@ cc_library(
     ],
 )
 
-# Command handler test (optional - not yet implemented)
-# cc_test(
-#     name = "command_handler_test",
-#     size = "small",
-#     srcs = ["command_handler_test.cc"],
-#     deps = [
-#         ":command_handler",
-#     ],
-# )
+# Command handler unit tests for command tag system
+cc_test(
+    name = "command_handler_test",
+    size = "small",
+    srcs = ["command_handler_test.cc"],
+    deps = [
+        ":command_handler",
+        "@nlohmann_json//:json",
+    ],
+)
 
 # Unix socket server test (optional - not yet implemented)
 # cc_test(

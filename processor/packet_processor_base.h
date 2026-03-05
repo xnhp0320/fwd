@@ -3,6 +3,7 @@
 
 #include "absl/status/status.h"
 #include "config/dpdk_config.h"
+#include "processor/processor_context.h"
 
 namespace processor {
 
@@ -28,6 +29,11 @@ class PacketProcessorBase {
   void Process() {
     static_cast<Derived*>(this)->process_impl();
   }
+
+  // Export processor-specific data into the context.
+  // Default is a no-op; processors with internal data structures
+  // (e.g. FiveTupleForwardingProcessor) override to set processor_data.
+  void ExportProcessorData(ProcessorContext& /*ctx*/) {}
 
  protected:
   const dpdk_config::PmdThreadConfig& config() const { return config_; }

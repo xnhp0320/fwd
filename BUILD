@@ -23,6 +23,8 @@ cc_binary(
         "//config:dpdk_initializer",
         "//config:pmd_thread_manager",
         "//control:control_plane",
+        "//processor:five_tuple_forwarding_processor",
+        "//processor:simple_forwarding_processor",
         "//rcu:rcu_manager",
         "@abseil-cpp//absl/flags:flag",
         "@abseil-cpp//absl/flags:parse",
@@ -31,15 +33,3 @@ cc_binary(
     ],
 )
 
-# Verification binary for dpdk.json integration test
-cc_binary(
-    name = "verify_dpdk_json",
-    srcs = ["verify_dpdk_json.cc"],
-    data = ["dpdk.json"],
-    deps = [
-        "//config:config_parser",
-        "//config:config_printer",
-        "//config:config_validator",
-        "//config:dpdk_config",
-    ],
-)

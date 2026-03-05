@@ -67,16 +67,25 @@ func (c *Client) Close() error {
 }
 
 // Send sends a command name to the control plane and returns the parsed response.
-// It writes {"command":"<name>"}\n and reads until the next newline.
+// It delegates to SendWithParams with nil params.
 func (c *Client) Send(command string) (*Response, error) {
+	return c.SendWithParams(command, nil)
+}
+
+// SendWithParams sends a command with optional parameters to the control plane.
+// It writes {"command":"<name>","params":{...}}\n and reads until the next newline.
+// If params is nil, the "params" field is omitted from the JSON payload.
+func (c *Client) SendWithParams(command string, params map[string]string) (*Response, error) {
 	if c.conn == nil {
 		return nil, fmt.Errorf("not connected")
 	}
 
 	// Build the request payload.
-	req := struct {
-		Command string `json:"command"`
-	}{Command: command}
+	req := make(map[string]interface{})
+	req["command"] = command
+	if params != nil {
+		req["params"] = params
+	}
 
 	data, err := json.Marshal(req)
 	if err != nil {

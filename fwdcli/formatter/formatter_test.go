@@ -171,3 +171,50 @@ func TestFormatJSONTrailingNewline(t *testing.T) {
 		t.Error("output should end with a newline")
 	}
 }
+func TestFormatCommands(t *testing.T) {
+	raw := json.RawMessage(`{"commands":[{"name":"shutdown","tag":"common"},{"name":"get_flow_table","tag":"five_tuple_forwarding"}]}`)
+	out, err := FormatCommands(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "COMMAND") {
+		t.Error("output should contain COMMAND header")
+	}
+	if !strings.Contains(out, "TAG") {
+		t.Error("output should contain TAG header")
+	}
+	if !strings.Contains(out, "shutdown") {
+		t.Error("output should contain command name shutdown")
+	}
+	if !strings.Contains(out, "common") {
+		t.Error("output should contain tag common")
+	}
+	if !strings.Contains(out, "get_flow_table") {
+		t.Error("output should contain command name get_flow_table")
+	}
+	if !strings.Contains(out, "five_tuple_forwarding") {
+		t.Error("output should contain tag five_tuple_forwarding")
+	}
+}
+
+func TestFormatCommandsEmpty(t *testing.T) {
+	raw := json.RawMessage(`{"commands":[]}`)
+	out, err := FormatCommands(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "COMMAND") {
+		t.Error("output should contain COMMAND header even with empty list")
+	}
+	if !strings.Contains(out, "TAG") {
+		t.Error("output should contain TAG header even with empty list")
+	}
+}
+
+func TestFormatCommandsInvalidJSON(t *testing.T) {
+	raw := json.RawMessage(`{invalid}`)
+	_, err := FormatCommands(raw)
+	if err == nil {
+		t.Error("expected error for invalid JSON")
+	}
+}

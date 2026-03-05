@@ -354,6 +354,26 @@ absl::StatusOr<DpdkConfig> ConfigParser::ParseString(
             thread_json["processor"].get<std::string>();
       }
 
+      // Parse processor_params (optional object of string→string pairs)
+      if (thread_json.contains("processor_params")) {
+        if (!thread_json["processor_params"].is_object()) {
+          return absl::InvalidArgumentError(
+              absl::StrCat("PMD thread on lcore ", pmd_config.lcore_id,
+                           ": field 'processor_params' must be an object"));
+        }
+        for (auto it = thread_json["processor_params"].begin();
+             it != thread_json["processor_params"].end(); ++it) {
+          if (!it.value().is_string()) {
+            return absl::InvalidArgumentError(
+                absl::StrCat("PMD thread on lcore ", pmd_config.lcore_id,
+                             ": processor_params value for key '", it.key(),
+                             "' must be a string"));
+          }
+          pmd_config.processor_params[it.key()] =
+              it.value().get<std::string>();
+        }
+      }
+
       config.pmd_threads.push_back(pmd_config);
     }
   }

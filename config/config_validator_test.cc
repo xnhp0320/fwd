@@ -3,7 +3,26 @@
 #include <iostream>
 #include <string>
 
+#include "processor/processor_registry.h"
+
 using namespace dpdk_config;
+
+// Register a minimal test processor so the validator can look up
+// "simple_forwarding" without pulling in DPDK runtime dependencies.
+static bool register_test_processor = [] {
+  processor::ProcessorEntry entry;
+  entry.launcher = nullptr;
+  entry.checker = nullptr;
+  entry.param_checker =
+      [](const absl::flat_hash_map<std::string, std::string>& params)
+      -> absl::Status {
+    if (params.empty()) return absl::OkStatus();
+    return absl::InvalidArgumentError("no params supported");
+  };
+  processor::ProcessorRegistry::Instance().Register("simple_forwarding",
+                                                    std::move(entry));
+  return true;
+}();
 
 // Simple test helper
 int failed_tests = 0;
@@ -762,6 +781,53 @@ int main() {
              ConfigValidator::Validate(config5).ok());
     
     std::cout << "--- End of TX queue assignment validation tests ---\n\n";
+  }
+
+  // Test processor param validation in ConfigValidator
+  {
+    std::cout << "--- Testing processor param validation ---\n";
+
+    // Valid: empty processor_params should pass validation
+    DpdkConfig config1;
+    config1.core_mask = "0x03";  // Lcores 0-1, main is 0
+    DpdkPortConfig port1;
+    port1.port_id = 0;
+    port1.num_rx_queues = 1;
+    port1.num_tx_queues = 1;
+    port1.num_descriptors = 512;
+    port1.mbuf_pool_size = 8192;
+    port1.mbuf_size = 2048;
+    config1.ports.push_back(port1);
+    PmdThreadConfig pmd1;
+    pmd1.lcore_id = 1;
+    pmd1.processor_name = "simple_forwarding";
+    // processor_params left empty
+    config1.pmd_threads.push_back(pmd1);
+    TestCase("Param validation: empty params pass",
+             ConfigValidator::Validate(config1).ok());
+
+    // Invalid: non-empty processor_params should fail with InvalidArgument
+    DpdkConfig config2;
+    config2.core_mask = "0x03";
+    DpdkPortConfig port2;
+    port2.port_id = 0;
+    port2.num_rx_queues = 1;
+    port2.num_tx_queues = 1;
+    port2.num_descriptors = 512;
+    port2.mbuf_pool_size = 8192;
+    port2.mbuf_size = 2048;
+    config2.ports.push_back(port2);
+    PmdThreadConfig pmd2;
+    pmd2.lcore_id = 1;
+    pmd2.processor_name = "simple_forwarding";
+    pmd2.processor_params["capacity"] = "100";
+    config2.pmd_threads.push_back(pmd2);
+    auto status2 = ConfigValidator::Validate(config2);
+    TestCase("Param validation: unrecognized params fail",
+             !status2.ok() &&
+             status2.code() == absl::StatusCode::kInvalidArgument);
+
+    std::cout << "--- End of processor param validation tests ---\n\n";
   }
 
   // Test valid complete configuration

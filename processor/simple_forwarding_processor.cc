@@ -3,6 +3,7 @@
 #include <rte_ethdev.h>
 #include <rte_mbuf.h>
 
+#include "absl/strings/str_cat.h"
 #include "processor/processor_registry.h"
 #include "rxtx/batch.h"
 
@@ -47,6 +48,16 @@ void SimpleForwardingProcessor::process_impl() {
     // Release ownership so the Batch destructor doesn't double-free.
     batch.Release();
   }
+}
+
+absl::Status SimpleForwardingProcessor::CheckParams(
+    const absl::flat_hash_map<std::string, std::string>& params) {
+  if (params.empty()) {
+    return absl::OkStatus();
+  }
+  // SimpleForwardingProcessor accepts no parameters.
+  return absl::InvalidArgumentError(
+      absl::StrCat("unrecognized parameter: ", params.begin()->first));
 }
 
 REGISTER_PROCESSOR("simple_forwarding", SimpleForwardingProcessor);

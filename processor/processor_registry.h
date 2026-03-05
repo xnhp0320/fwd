@@ -24,7 +24,7 @@ using LauncherFn = std::function<int(
     const dpdk_config::PmdThreadConfig& config,
     std::atomic<bool>* stop_flag,
     struct rte_rcu_qsbr* qsbr_var,
-    const processor::ProcessorContext& ctx)>;
+    processor::ProcessorContext& ctx)>;
 
 // A check function validates queue assignments for a processor type.
 // Called at startup before entering the hot loop.
@@ -32,9 +32,15 @@ using CheckFn = std::function<absl::Status(
     const std::vector<dpdk_config::QueueAssignment>& rx_queues,
     const std::vector<dpdk_config::QueueAssignment>& tx_queues)>;
 
+// A param-check function validates per-processor configuration parameters.
+// Called at startup to reject unrecognized or invalid parameter keys/values.
+using ParamCheckFn = std::function<absl::Status(
+    const absl::flat_hash_map<std::string, std::string>& params)>;
+
 struct ProcessorEntry {
   LauncherFn launcher;
   CheckFn checker;
+  ParamCheckFn param_checker;
 };
 
 class ProcessorRegistry {
@@ -70,8 +76,9 @@ ProcessorEntry MakeProcessorEntry() {
           [](const dpdk_config::PmdThreadConfig& config,
              std::atomic<bool>* stop_flag,
              struct rte_rcu_qsbr* qsbr_var,
-             const processor::ProcessorContext& ctx) -> int {
+             processor::ProcessorContext& ctx) -> int {
         ProcessorType proc(config, ctx.stats);
+        proc.ExportProcessorData(ctx);
         while (!stop_flag->load(std::memory_order_relaxed)) {
           proc.process_impl();  // Direct call — compiler knows exact type.
           if (qsbr_var) {
@@ -90,6 +97,12 @@ ProcessorEntry MakeProcessorEntry() {
         dummy.tx_queues = tx;
         ProcessorType proc(dummy);
         return proc.Check();
+      },
+      // ParamChecker: delegates to the processor's static CheckParams.
+      .param_checker =
+          [](const absl::flat_hash_map<std::string, std::string>& params)
+          -> absl::Status {
+        return ProcessorType::CheckParams(params);
       },
   };
 }

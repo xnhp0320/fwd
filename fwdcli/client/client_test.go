@@ -293,3 +293,97 @@ func TestSend_NonShutdownEOFIsError(t *testing.T) {
 		t.Fatal("expected error for non-shutdown EOF")
 	}
 }
+
+func TestSendWithParams_WritesCorrectJSON(t *testing.T) {
+	sockPath, cleanup := startMockServer(t, func(conn net.Conn) {
+		buf := make([]byte, 4096)
+		n, _ := conn.Read(buf)
+		received := string(buf[:n])
+
+		// Verify the received payload includes command and params.
+		var req map[string]interface{}
+		if err := json.Unmarshal([]byte(received[:len(received)-1]), &req); err != nil {
+			t.Errorf("failed to unmarshal request: %v", err)
+			return
+		}
+
+		if req["command"] != "list_commands" {
+			t.Errorf("expected command 'list_commands', got %v", req["command"])
+		}
+		params, ok := req["params"].(map[string]interface{})
+		if !ok {
+			t.Error("expected params to be a map")
+			return
+		}
+		if params["tag"] != "common" {
+			t.Errorf("expected params.tag 'common', got %v", params["tag"])
+		}
+
+		resp := `{"status":"success","result":{"commands":[]}}` + "\n"
+		conn.Write([]byte(resp))
+	})
+	defer cleanup()
+
+	c := New(sockPath, DefaultTimeout)
+	if err := c.Connect(); err != nil {
+		t.Fatalf("connect failed: %v", err)
+	}
+	defer c.Close()
+
+	resp, err := c.SendWithParams("list_commands", map[string]string{"tag": "common"})
+	if err != nil {
+		t.Fatalf("SendWithParams failed: %v", err)
+	}
+	if !resp.IsSuccess() {
+		t.Error("expected success response")
+	}
+}
+
+func TestSendWithParams_NilParamsOmitsField(t *testing.T) {
+	sockPath, cleanup := startMockServer(t, func(conn net.Conn) {
+		buf := make([]byte, 4096)
+		n, _ := conn.Read(buf)
+		received := string(buf[:n])
+
+		// Verify the received payload has command but no params field.
+		var req map[string]interface{}
+		if err := json.Unmarshal([]byte(received[:len(received)-1]), &req); err != nil {
+			t.Errorf("failed to unmarshal request: %v", err)
+			return
+		}
+
+		if req["command"] != "status" {
+			t.Errorf("expected command 'status', got %v", req["command"])
+		}
+		if _, exists := req["params"]; exists {
+			t.Error("expected params field to be absent for nil params")
+		}
+
+		resp := `{"status":"success","result":{}}` + "\n"
+		conn.Write([]byte(resp))
+	})
+	defer cleanup()
+
+	c := New(sockPath, DefaultTimeout)
+	if err := c.Connect(); err != nil {
+		t.Fatalf("connect failed: %v", err)
+	}
+	defer c.Close()
+
+	resp, err := c.SendWithParams("status", nil)
+	if err != nil {
+		t.Fatalf("SendWithParams with nil params failed: %v", err)
+	}
+	if !resp.IsSuccess() {
+		t.Error("expected success response")
+	}
+}
+
+func TestSendWithParams_NotConnected(t *testing.T) {
+	c := New("/tmp/test.sock", DefaultTimeout)
+	_, err := c.SendWithParams("status", map[string]string{"key": "val"})
+	if err == nil {
+		t.Fatal("expected error when not connected")
+	}
+}
+

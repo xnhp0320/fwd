@@ -7,6 +7,7 @@
 #include <unordered_set>
 
 #include "absl/strings/str_cat.h"
+#include "processor/processor_registry.h"
 
 namespace dpdk_config {
 
@@ -302,6 +303,23 @@ absl::Status ConfigValidator::Validate(const DpdkConfig& config) {
                            queue.port_id, ", queue ", queue.queue_id));
         }
         seen_tx_queues.insert(queue_pair);
+      }
+    }
+
+    // Validate processor parameters for each PMD thread
+    for (const auto& pmd_config : config.pmd_threads) {
+      std::string proc_name = pmd_config.processor_name.empty()
+          ? processor::ProcessorRegistry::kDefaultProcessorName
+          : pmd_config.processor_name;
+      auto entry_or = processor::ProcessorRegistry::Instance().Lookup(proc_name);
+      if (!entry_or.ok()) {
+        return entry_or.status();
+      }
+      const auto* entry = *entry_or;
+      absl::Status param_status =
+          entry->param_checker(pmd_config.processor_params);
+      if (!param_status.ok()) {
+        return param_status;
       }
     }
   }

@@ -1,11 +1,20 @@
 #include "control/command_handler.h"
 
+#include <arpa/inet.h>
 #include <rte_lcore.h>
 
+#include <algorithm>
+#include <memory>
+#include <utility>
+#include <vector>
+
 #include "absl/strings/str_cat.h"
-#include "config/pmd_thread_manager.h"
 #include "config/pmd_thread.h"
+#include "config/pmd_thread_manager.h"
 #include "nlohmann/json.hpp"
+#include "rcu/rcu_manager.h"
+#include "rxtx/fast_lookup_table.h"
+#include "rxtx/lookup_entry.h"
 
 namespace dpdk_config {
 
@@ -14,9 +23,29 @@ using json = nlohmann::json;
 CommandHandler::CommandHandler(PMDThreadManager* thread_manager,
                                std::function<void()> shutdown_callback)
     : thread_manager_(thread_manager),
-      shutdown_callback_(std::move(shutdown_callback)) {}
+      shutdown_callback_(std::move(shutdown_callback)) {
+  RegisterCommand("shutdown", "common",
+                   [this](const json& params) { return HandleShutdown(params); });
+  RegisterCommand("status", "common",
+                   [this](const json& params) { return HandleStatus(params); });
+  RegisterCommand("get_threads", "common",
+                   [this](const json& params) { return HandleGetThreads(params); });
+  RegisterCommand("get_stats", "common",
+                   [this](const json& params) { return HandleGetStats(params); });
+  RegisterCommand("list_commands", "common",
+                   [this](const json& params) { return HandleListCommands(params); });
+  RegisterCommand("get_flow_table", "five_tuple_forwarding",
+                   [this](const json& params) { return HandleGetFlowTable(params); });
+}
 
-std::string CommandHandler::HandleCommand(const std::string& json_command) {
+void CommandHandler::RegisterCommand(
+    const std::string& name, const std::string& tag,
+    std::function<CommandResponse(const nlohmann::json&)> handler) {
+  commands_[name] = CommandEntry{tag, std::move(handler)};
+}
+
+std::optional<std::string> CommandHandler::HandleCommand(
+    const std::string& json_command, ResponseCallback response_cb) {
   // Parse the command
   auto parse_result = ParseCommand(json_command);
   if (!parse_result.ok()) {
@@ -27,7 +56,15 @@ std::string CommandHandler::HandleCommand(const std::string& json_command) {
     return FormatResponse(error_response);
   }
 
-  // Execute the command
+  // Special async handling for get_flow_table when RCU + thread manager available
+  if (parse_result->command == "get_flow_table" &&
+      rcu_manager_ != nullptr && thread_manager_ != nullptr &&
+      response_cb != nullptr) {
+    HandleGetFlowTableAsync(std::move(response_cb));
+    return std::nullopt;  // Response will be sent asynchronously
+  }
+
+  // Execute the command synchronously
   CommandResponse response = ExecuteCommand(*parse_result);
   return FormatResponse(response);
 }
@@ -90,22 +127,42 @@ std::string CommandHandler::FormatResponse(const CommandResponse& response) {
 
 CommandHandler::CommandResponse CommandHandler::ExecuteCommand(
     const CommandRequest& request) {
-  // Dispatch to appropriate handler based on command name
-  if (request.command == "shutdown") {
-    return HandleShutdown(request.params);
-  } else if (request.command == "status") {
-    return HandleStatus(request.params);
-  } else if (request.command == "get_threads") {
-    return HandleGetThreads(request.params);
-  } else if (request.command == "get_stats") {
-    return HandleGetStats(request.params);
-  } else {
-    // Unknown command
-    CommandResponse response;
-    response.status = "error";
-    response.error = absl::StrCat("Unknown command: ", request.command);
-    return response;
+  auto it = commands_.find(request.command);
+  if (it != commands_.end()) {
+    return it->second.handler(request.params);
   }
+
+  // Unknown command
+  CommandResponse response;
+  response.status = "error";
+  response.error = absl::StrCat("Unknown command: ", request.command);
+  return response;
+}
+
+std::vector<std::string> CommandHandler::GetCommandsByTag(
+    const std::string& tag) const {
+  std::vector<std::string> result;
+  for (const auto& [name, entry] : commands_) {
+    if (entry.tag == tag) {
+      result.push_back(name);
+    }
+  }
+  std::sort(result.begin(), result.end());
+  return result;
+}
+
+std::vector<std::pair<std::string, std::string>>
+CommandHandler::GetAllCommands() const {
+  std::vector<std::pair<std::string, std::string>> result;
+  for (const auto& [name, entry] : commands_) {
+    result.emplace_back(name, entry.tag);
+  }
+  std::sort(result.begin(), result.end());
+  return result;
+}
+
+void CommandHandler::SetRcuManager(rcu::RcuManager* rcu_manager) {
+  rcu_manager_ = rcu_manager;
 }
 
 CommandHandler::CommandResponse CommandHandler::HandleShutdown(
@@ -197,6 +254,133 @@ CommandHandler::CommandResponse CommandHandler::HandleGetStats(
                      {"total", {{"packets", total_packets},
                                 {"bytes", total_bytes}}}};
   return response;
+}
+
+CommandHandler::CommandResponse CommandHandler::HandleListCommands(
+    const nlohmann::json& params) {
+  CommandResponse response;
+  response.status = "success";
+
+  json commands_array = json::array();
+
+  if (params.contains("tag") && params["tag"].is_string()) {
+    std::string tag = params["tag"].get<std::string>();
+    auto names = GetCommandsByTag(tag);
+    for (const auto& name : names) {
+      commands_array.push_back({{"name", name}, {"tag", tag}});
+    }
+  } else {
+    auto all = GetAllCommands();
+    for (const auto& [name, tag] : all) {
+      commands_array.push_back({{"name", name}, {"tag", tag}});
+    }
+  }
+
+  response.result = {{"commands", commands_array}};
+  return response;
+}
+
+CommandHandler::CommandResponse CommandHandler::HandleGetFlowTable(
+    const nlohmann::json& params) {
+  // Synchronous fallback: returned when rcu_manager_ or thread_manager_ is
+  // unavailable (the async path in HandleCommand bypasses this entirely).
+  CommandResponse response;
+  response.status = "error";
+  response.error = "not_supported";
+  return response;
+}
+
+void CommandHandler::HandleGetFlowTableAsync(ResponseCallback response_cb) {
+  // Phase 1: Collect tables from all threads and pause modifications.
+  struct TableInfo {
+    uint32_t lcore_id;
+    rxtx::FastLookupTable<>* table;  // nullptr for non-FiveTuple threads
+  };
+  auto tables = std::make_shared<std::vector<TableInfo>>();
+
+  for (uint32_t lcore_id : thread_manager_->GetLcoreIds()) {
+    PmdThread* thread = thread_manager_->GetThread(lcore_id);
+    const auto& ctx = thread->GetProcessorContext();
+    auto* table =
+        static_cast<rxtx::FastLookupTable<>*>(ctx.processor_data);
+    tables->push_back({lcore_id, table});
+    if (table) {
+      table->SetModifiable(false);
+    }
+  }
+
+  // Phase 2: Schedule read after grace period completes.
+  // Share response_cb so it can be used both in the lambda and the error path.
+  auto shared_cb = std::make_shared<ResponseCallback>(std::move(response_cb));
+  auto status = rcu_manager_->CallAfterGracePeriod(
+      [tables, shared_cb, this]() {
+        json threads_array = json::array();
+
+        for (const auto& info : *tables) {
+          if (info.table == nullptr) {
+            threads_array.push_back(
+                {{"lcore_id", info.lcore_id}, {"entries", json::array()}});
+            continue;
+          }
+
+          json entries = json::array();
+          try {
+            for (auto it = info.table->Begin(); it != info.table->End();
+                 ++it) {
+              rxtx::LookupEntry* entry = *it;
+              json e;
+              char ip_buf[INET6_ADDRSTRLEN];
+
+              if (entry->IsIpv6()) {
+                inet_ntop(AF_INET6, entry->src_ip.v6, ip_buf, sizeof(ip_buf));
+                e["src_ip"] = ip_buf;
+                inet_ntop(AF_INET6, entry->dst_ip.v6, ip_buf, sizeof(ip_buf));
+                e["dst_ip"] = ip_buf;
+              } else {
+                inet_ntop(AF_INET, &entry->src_ip.v4, ip_buf, sizeof(ip_buf));
+                e["src_ip"] = ip_buf;
+                inet_ntop(AF_INET, &entry->dst_ip.v4, ip_buf, sizeof(ip_buf));
+                e["dst_ip"] = ip_buf;
+              }
+
+              e["src_port"] = entry->src_port;
+              e["dst_port"] = entry->dst_port;
+              e["protocol"] = entry->protocol;
+              e["vni"] = entry->vni;
+              e["is_ipv6"] = entry->IsIpv6();
+              entries.push_back(std::move(e));
+            }
+          } catch (...) {
+            info.table->SetModifiable(true);
+            CommandResponse err;
+            err.status = "error";
+            err.error = "Failed to serialize flow table entries";
+            (*shared_cb)(FormatResponse(err));
+            return;
+          }
+          info.table->SetModifiable(true);
+          threads_array.push_back(
+              {{"lcore_id", info.lcore_id}, {"entries", entries}});
+        }
+
+        CommandResponse resp;
+        resp.status = "success";
+        resp.result = {{"threads", threads_array}};
+        (*shared_cb)(FormatResponse(resp));
+      });
+
+  if (!status.ok()) {
+    // Grace period scheduling failed — restore all tables to modifiable.
+    for (const auto& info : *tables) {
+      if (info.table) {
+        info.table->SetModifiable(true);
+      }
+    }
+    CommandResponse err;
+    err.status = "error";
+    err.error = "Failed to schedule grace period";
+    (*shared_cb)(FormatResponse(err));
+  }
 }
 
 }  // namespace dpdk_config

@@ -89,6 +89,19 @@ Examples:
     )
     
     parser.add_argument(
+        "--processor",
+        type=str,
+        help="Processor name (e.g., five_tuple_forwarding)"
+    )
+    
+    parser.add_argument(
+        "--processor-param",
+        action="append",
+        metavar="KEY=VALUE",
+        help="Processor parameter as KEY=VALUE (repeatable)"
+    )
+    
+    parser.add_argument(
         "-o", "--output",
         default="dpdk.json",
         help="Output file path (default: dpdk.json)"
@@ -96,6 +109,17 @@ Examples:
     
     args = parser.parse_args()
     
+    # Parse processor parameters into a dict
+    processor_params = None
+    if args.processor_param:
+        processor_params = {}
+        for param in args.processor_param:
+            if '=' not in param:
+                print(f"Error: Invalid processor parameter format: {param} (expected KEY=VALUE)", file=sys.stderr)
+                sys.exit(1)
+            key, value = param.split('=', 1)
+            processor_params[key] = value
+
     try:
         # Generate configuration
         config = TestConfigGenerator.generate_config(
@@ -104,7 +128,9 @@ Examples:
             num_queues=args.queues,
             num_rx_queues=args.rx_queues,
             num_tx_queues=args.tx_queues,
-            use_hugepages=args.hugepages
+            use_hugepages=args.hugepages,
+            processor_name=args.processor,
+            processor_params=processor_params
         )
         
         # Write to file
@@ -119,6 +145,10 @@ Examples:
         print(f"  RX Queues per port: {rx_q}")
         print(f"  TX Queues per port: {tx_q}")
         print(f"  Hugepages: {'enabled' if args.hugepages else 'disabled'}")
+        if args.processor:
+            print(f"  Processor: {args.processor}")
+        if processor_params:
+            print(f"  Processor params: {processor_params}")
         
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)

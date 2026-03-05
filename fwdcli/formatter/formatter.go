@@ -42,6 +42,16 @@ type StatsResult struct {
 	Threads []ThreadStats `json:"threads"`
 	Total   TotalStats    `json:"total"`
 }
+// CommandInfo represents a single command entry.
+type CommandInfo struct {
+	Name string `json:"name"`
+	Tag  string `json:"tag"`
+}
+
+// CommandsResult maps the list_commands command result.
+type CommandsResult struct {
+	Commands []CommandInfo `json:"commands"`
+}
 
 // FormatStatus renders a status response as a human-readable string.
 func FormatStatus(result json.RawMessage) (string, error) {
@@ -80,6 +90,21 @@ func FormatStats(result json.RawMessage) (string, error) {
 	}
 
 	return renderStatsTable(&s), nil
+}
+// FormatCommands renders a list_commands response as a table with COMMAND and TAG columns.
+func FormatCommands(result json.RawMessage) (string, error) {
+	var c CommandsResult
+	if err := json.Unmarshal(result, &c); err != nil {
+		return "", fmt.Errorf("failed to parse commands result: %w", err)
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%-30s %s\n", "COMMAND", "TAG")
+	fmt.Fprintf(&b, "%-30s %s\n", "-------", "---")
+	for _, cmd := range c.Commands {
+		fmt.Fprintf(&b, "%-30s %s\n", cmd.Name, cmd.Tag)
+	}
+	return b.String(), nil
 }
 
 // FormatStatsMonitor renders stats with a timestamp header and ANSI clear-screen prefix.

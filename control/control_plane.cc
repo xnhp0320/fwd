@@ -91,6 +91,9 @@ absl::Status ControlPlane::Initialize(const Config& config) {
       thread_manager_,
       [this]() { Shutdown(); });
 
+  // Wire RCU manager into the command handler for async grace-period operations.
+  command_handler_->SetRcuManager(rcu_manager_.get());
+
   // Initialize UnixSocketServer
   socket_server_ = std::make_unique<UnixSocketServer>(
       *io_context_,
@@ -119,9 +122,13 @@ absl::Status ControlPlane::Run() {
   auto status = socket_server_->Start(
       [this](const std::string& message,
              std::function<void(const std::string&)> response_callback) {
-        // Process command and send response
-        std::string response = command_handler_->HandleCommand(message);
-        response_callback(response);
+        // Process command and send response.
+        // If HandleCommand returns a value, send it immediately.
+        // If std::nullopt, the handler will call response_callback later (async).
+        auto response = command_handler_->HandleCommand(message, response_callback);
+        if (response.has_value()) {
+          response_callback(*response);
+        }
       });
 
   if (!status.ok()) {

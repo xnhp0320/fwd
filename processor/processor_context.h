@@ -10,6 +10,7 @@ namespace processor {
 // positional args to LauncherFn.
 struct ProcessorContext {
   PacketStats* stats = nullptr;
+  void* processor_data = nullptr;  // Processor-specific data pointer
 };
 
 }  // namespace processor

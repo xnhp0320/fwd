@@ -8,6 +8,7 @@
 #include "absl/status/status.h"
 #include "config/dpdk_config.h"
 #include "processor/packet_stats.h"
+#include "processor/processor_context.h"
 
 struct rte_rcu_qsbr;
 
@@ -36,8 +37,16 @@ class PmdThread {
     return config_.tx_queues;
   }
 
+  // Get the processor name for this thread
+  const std::string& GetProcessorName() const {
+    return config_.processor_name;
+  }
+
   // Get per-thread packet stats
   const processor::PacketStats* GetStats() const { return &stats_; }
+
+  // Access the processor context (populated after Run() starts).
+  const processor::ProcessorContext& GetProcessorContext() const { return ctx_; }
 
   // Static entry point for DPDK remote launch
   // This is the function passed to rte_eal_remote_launch
@@ -60,6 +69,10 @@ class PmdThread {
 
   // Per-thread packet/byte statistics.
   processor::PacketStats stats_;
+
+  // Per-thread processor context (stats pointer set in constructor,
+  // processor_data set by the launcher during Run()).
+  processor::ProcessorContext ctx_;
 }
 ;
 
