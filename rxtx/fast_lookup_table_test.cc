@@ -86,6 +86,72 @@ TEST(LookupEntryEqTest, DifferentFlagsReturnsFalse) {
   EXPECT_FALSE(LookupEntryEq{}(&a, &b));
 }
 
+// --- New session fields default value tests ---
+
+TEST(LookupEntryTest, SessionDefaultsToNullptr) {
+  LookupEntry entry{};
+  EXPECT_EQ(entry.session, nullptr);
+}
+
+TEST(LookupEntryTest, CachedVersionDefaultsToZero) {
+  LookupEntry entry{};
+  EXPECT_EQ(entry.cached_version, 0u);
+}
+
+// --- Hash/eq ignore session and cached_version ---
+
+TEST(LookupEntryHashTest, DifferentSessionFieldsProduceSameHash) {
+  LookupEntry a{};
+  a.src_ip.v4 = 0xC0A80001;
+  a.dst_ip.v4 = 0xC0A80002;
+  a.src_port = 5000;
+  a.dst_port = 443;
+  a.protocol = 17;
+  a.vni = 42;
+  a.flags = 0;
+  a.cached_version = 0;
+  a.session = nullptr;
+
+  LookupEntry b{};
+  b.src_ip.v4 = 0xC0A80001;
+  b.dst_ip.v4 = 0xC0A80002;
+  b.src_port = 5000;
+  b.dst_port = 443;
+  b.protocol = 17;
+  b.vni = 42;
+  b.flags = 0;
+  b.cached_version = 99;
+  b.session = reinterpret_cast<void*>(0xDEADBEEF);
+
+  EXPECT_EQ(LookupEntryHash{}(&a), LookupEntryHash{}(&b));
+}
+
+TEST(LookupEntryEqTest, DifferentSessionFieldsStillEqual) {
+  LookupEntry a{};
+  a.src_ip.v4 = 0x01020304;
+  a.dst_ip.v4 = 0x05060708;
+  a.src_port = 1000;
+  a.dst_port = 2000;
+  a.protocol = 6;
+  a.vni = 10;
+  a.flags = 0;
+  a.cached_version = 0;
+  a.session = nullptr;
+
+  LookupEntry b{};
+  b.src_ip.v4 = 0x01020304;
+  b.dst_ip.v4 = 0x05060708;
+  b.src_port = 1000;
+  b.dst_port = 2000;
+  b.protocol = 6;
+  b.vni = 10;
+  b.flags = 0;
+  b.cached_version = 42;
+  b.session = reinterpret_cast<void*>(0xCAFEBABE);
+
+  EXPECT_TRUE(LookupEntryEq{}(&a, &b));
+}
+
 // --- Helper for FastLookupTable tests ---
 
 IpAddress MakeIpv4(uint32_t addr) {

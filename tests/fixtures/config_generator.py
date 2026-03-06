@@ -47,7 +47,8 @@ class TestConfigGenerator:
         num_tx_queues: int = None,
         use_hugepages: bool = False,
         processor_name: str = None,
-        processor_params: Dict[str, str] = None
+        processor_params: Dict[str, str] = None,
+        session_capacity: int = 0
     ) -> Dict[str, Any]:
         """
         Generate a test configuration with net_tap virtual PMD.
@@ -61,6 +62,7 @@ class TestConfigGenerator:
             use_hugepages: Whether to use hugepages (default: False)
             processor_name: Optional processor name to include in each pmd_threads entry
             processor_params: Optional dict of processor parameters to include in each pmd_threads entry
+            session_capacity: Session table capacity (0 = disabled, omitted from config)
         
         Returns:
             Dictionary representing dpdk.json configuration
@@ -135,6 +137,9 @@ class TestConfigGenerator:
             "ports": ports,
             "pmd_threads": pmd_thread_dicts
         }
+
+        if session_capacity > 0:
+            config["session_capacity"] = session_capacity
         
         return config
     

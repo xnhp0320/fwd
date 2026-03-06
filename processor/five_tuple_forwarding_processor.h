@@ -11,6 +11,10 @@
 #include "processor/processor_context.h"
 #include "rxtx/fast_lookup_table.h"
 
+namespace session {
+class SessionTable;
+}  // namespace session
+
 namespace processor {
 
 class FiveTupleForwardingProcessor
@@ -38,14 +42,19 @@ class FiveTupleForwardingProcessor
   std::size_t table_capacity() const { return table_.capacity(); }
 
   // Export the flow table pointer into the processor context.
+  // Also reads session_table from context (set by ControlPlane before launch).
   void ExportProcessorData(ProcessorContext& ctx) {
     ctx.processor_data = &table_;
+    if (ctx.session_table) {
+      session_table_ = static_cast<session::SessionTable*>(ctx.session_table);
+    }
   }
 
  private:
   static constexpr uint16_t kBatchSize = 32;
   static constexpr std::size_t kDefaultCapacity = 65536;
   PacketStats* stats_ = nullptr;
+  session::SessionTable* session_table_ = nullptr;
   rxtx::FastLookupTable<> table_;
 };
 

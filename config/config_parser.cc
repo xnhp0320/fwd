@@ -378,6 +378,15 @@ absl::StatusOr<DpdkConfig> ConfigParser::ParseString(
     }
   }
 
+  // Parse session_capacity (optional unsigned integer)
+  if (j.contains("session_capacity")) {
+    if (!j["session_capacity"].is_number_unsigned()) {
+      return absl::InvalidArgumentError(
+          "Field 'session_capacity' must be an unsigned integer");
+    }
+    config.session_capacity = j["session_capacity"].get<uint32_t>();
+  }
+
   // Parse explicit additional_params field (array of [key, value] pairs)
   if (j.contains("additional_params") && j["additional_params"].is_array()) {
     for (const auto& param : j["additional_params"]) {
@@ -393,7 +402,8 @@ absl::StatusOr<DpdkConfig> ConfigParser::ParseString(
   // Skip the known fields we've already processed
   const std::set<std::string> known_fields = {
       "core_mask", "memory_channels", "pci_allowlist",
-      "pci_blocklist", "log_level", "huge_pages", "ports", "pmd_threads", "additional_params"
+      "pci_blocklist", "log_level", "huge_pages", "ports", "pmd_threads",
+      "session_capacity", "additional_params"
   };
 
   for (auto it = j.begin(); it != j.end(); ++it) {

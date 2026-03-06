@@ -53,6 +53,25 @@ type CommandsResult struct {
 	Commands []CommandInfo `json:"commands"`
 }
 
+// SessionInfo represents a single session entry.
+type SessionInfo struct {
+	SrcIP     string `json:"src_ip"`
+	DstIP     string `json:"dst_ip"`
+	SrcPort   int    `json:"src_port"`
+	DstPort   int    `json:"dst_port"`
+	Protocol  int    `json:"protocol"`
+	ZoneID    int    `json:"zone_id"`
+	IsIPv6    bool   `json:"is_ipv6"`
+	Version   int    `json:"version"`
+	Timestamp uint64 `json:"timestamp"`
+}
+
+// SessionsResult maps the get_sessions command result.
+type SessionsResult struct {
+	Sessions []SessionInfo `json:"sessions"`
+}
+
+
 // FormatStatus renders a status response as a human-readable string.
 func FormatStatus(result json.RawMessage) (string, error) {
 	var s StatusResult
@@ -106,6 +125,35 @@ func FormatCommands(result json.RawMessage) (string, error) {
 	}
 	return b.String(), nil
 }
+
+// FormatSessions renders a get_sessions response as a human-readable table.
+func FormatSessions(result json.RawMessage) (string, error) {
+	var s SessionsResult
+	if err := json.Unmarshal(result, &s); err != nil {
+		return "", fmt.Errorf("failed to parse sessions result: %w", err)
+	}
+
+	if len(s.Sessions) == 0 {
+		return "No active sessions.\n", nil
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%-20s %-20s %-10s %-10s %-6s %-6s %-6s %-8s %s\n",
+		"SRC_IP", "DST_IP", "SRC_PORT", "DST_PORT", "PROTO", "ZONE", "IPV6", "VERSION", "TIMESTAMP")
+	fmt.Fprintf(&b, "%-20s %-20s %-10s %-10s %-6s %-6s %-6s %-8s %s\n",
+		"------", "------", "--------", "--------", "-----", "----", "----", "-------", "---------")
+	for _, sess := range s.Sessions {
+		ipv6Str := "false"
+		if sess.IsIPv6 {
+			ipv6Str = "true"
+		}
+		fmt.Fprintf(&b, "%-20s %-20s %-10d %-10d %-6d %-6d %-6s %-8d %d\n",
+			sess.SrcIP, sess.DstIP, sess.SrcPort, sess.DstPort,
+			sess.Protocol, sess.ZoneID, ipv6Str, sess.Version, sess.Timestamp)
+	}
+	return b.String(), nil
+}
+
 
 // FormatStatsMonitor renders stats with a timestamp header and ANSI clear-screen prefix.
 func FormatStatsMonitor(result json.RawMessage, ts time.Time) (string, error) {

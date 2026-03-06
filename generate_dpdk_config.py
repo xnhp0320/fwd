@@ -102,6 +102,13 @@ Examples:
     )
     
     parser.add_argument(
+        "--session-capacity",
+        type=int,
+        default=0,
+        help="Session table capacity (0 = disabled)"
+    )
+    
+    parser.add_argument(
         "-o", "--output",
         default="dpdk.json",
         help="Output file path (default: dpdk.json)"
@@ -130,7 +137,8 @@ Examples:
             num_tx_queues=args.tx_queues,
             use_hugepages=args.hugepages,
             processor_name=args.processor,
-            processor_params=processor_params
+            processor_params=processor_params,
+            session_capacity=args.session_capacity
         )
         
         # Write to file

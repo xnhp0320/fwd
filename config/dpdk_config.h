@@ -95,6 +95,9 @@ struct DpdkConfig {
   // PMD thread configurations
   std::vector<PmdThreadConfig> pmd_threads;
 
+  // Maximum number of concurrent sessions. 0 = session tracking disabled.
+  uint32_t session_capacity = 0;
+
   // Additional EAL parameters as key-value pairs for extensibility
   // Allows passing arbitrary parameters not explicitly defined above
   std::vector<std::pair<std::string, std::string>> additional_params;

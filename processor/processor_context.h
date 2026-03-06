@@ -11,6 +11,7 @@ namespace processor {
 struct ProcessorContext {
   PacketStats* stats = nullptr;
   void* processor_data = nullptr;  // Processor-specific data pointer
+  void* session_table = nullptr;   // SessionTable* (or nullptr if disabled)
 };
 
 }  // namespace processor

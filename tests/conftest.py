@@ -107,6 +107,7 @@ def test_config(test_output_dir, request):
         num_tx_queues = params.get('num_tx_queues', None)
         processor_name = params.get('processor_name', None)
         processor_params = params.get('processor_params', None)
+        session_capacity = params.get('session_capacity', 0)
     else:
         # Try to get from test node markers
         num_threads = 2
@@ -116,6 +117,7 @@ def test_config(test_output_dir, request):
         num_tx_queues = None
         processor_name = None
         processor_params = None
+        session_capacity = 0
         
         # Check for custom markers
         for marker in request.node.iter_markers():
@@ -127,6 +129,7 @@ def test_config(test_output_dir, request):
                 num_tx_queues = marker.kwargs.get('num_tx_queues', num_tx_queues)
                 processor_name = marker.kwargs.get('processor_name', processor_name)
                 processor_params = marker.kwargs.get('processor_params', processor_params)
+                session_capacity = marker.kwargs.get('session_capacity', session_capacity)
     
     # Generate configuration
     config = TestConfigGenerator.generate_config(
@@ -137,7 +140,8 @@ def test_config(test_output_dir, request):
         num_tx_queues=num_tx_queues,
         use_hugepages=False,  # Always disable hugepages for testing
         processor_name=processor_name,
-        processor_params=processor_params
+        processor_params=processor_params,
+        session_capacity=session_capacity
     )
     
     # Write to file with unique name

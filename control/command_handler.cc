@@ -15,6 +15,7 @@
 #include "rcu/rcu_manager.h"
 #include "rxtx/fast_lookup_table.h"
 #include "rxtx/lookup_entry.h"
+#include "session/session_key.h"
 
 namespace dpdk_config {
 
@@ -165,6 +166,14 @@ void CommandHandler::SetRcuManager(rcu::RcuManager* rcu_manager) {
   rcu_manager_ = rcu_manager;
 }
 
+void CommandHandler::SetSessionTable(session::SessionTable* session_table) {
+  session_table_ = session_table;
+  if (session_table_ != nullptr) {
+    RegisterCommand("get_sessions", "session",
+                     [this](const json& params) { return HandleGetSessions(params); });
+  }
+}
+
 CommandHandler::CommandResponse CommandHandler::HandleShutdown(
     const nlohmann::json& params) {
   CommandResponse response;
@@ -287,6 +296,49 @@ CommandHandler::CommandResponse CommandHandler::HandleGetFlowTable(
   CommandResponse response;
   response.status = "error";
   response.error = "not_supported";
+  return response;
+}
+
+CommandHandler::CommandResponse CommandHandler::HandleGetSessions(
+    const nlohmann::json& params) {
+  CommandResponse response;
+  response.status = "success";
+
+  json sessions_array = json::array();
+
+  if (session_table_ != nullptr) {
+    session_table_->ForEach([&sessions_array](const session::SessionKey& key,
+                                              session::SessionEntry* entry) {
+      json s;
+      char ip_buf[INET6_ADDRSTRLEN];
+      bool is_ipv6 = (key.flags & 1) != 0;
+
+      if (is_ipv6) {
+        inet_ntop(AF_INET6, key.src_ip.v6, ip_buf, sizeof(ip_buf));
+        s["src_ip"] = ip_buf;
+        inet_ntop(AF_INET6, key.dst_ip.v6, ip_buf, sizeof(ip_buf));
+        s["dst_ip"] = ip_buf;
+      } else {
+        inet_ntop(AF_INET, &key.src_ip.v4, ip_buf, sizeof(ip_buf));
+        s["src_ip"] = ip_buf;
+        inet_ntop(AF_INET, &key.dst_ip.v4, ip_buf, sizeof(ip_buf));
+        s["dst_ip"] = ip_buf;
+      }
+
+      s["src_port"] = key.src_port;
+      s["dst_port"] = key.dst_port;
+      s["protocol"] = key.protocol;
+      s["zone_id"] = key.zone_id;
+      s["is_ipv6"] = is_ipv6;
+      s["version"] = entry->version.load(std::memory_order_relaxed);
+      s["timestamp"] = entry->timestamp.load(std::memory_order_relaxed);
+
+      sessions_array.push_back(std::move(s));
+      return false;  // never delete
+    });
+  }
+
+  response.result = {{"sessions", sessions_array}};
   return response;
 }
 

@@ -39,6 +39,11 @@ std::string ConfigPrinter::ToJson(const DpdkConfig& config, int indent) {
     j["huge_pages"] = *config.huge_pages;
   }
 
+  // Serialize session_capacity (only if non-zero)
+  if (config.session_capacity > 0) {
+    j["session_capacity"] = config.session_capacity;
+  }
+
   // Serialize ports (array of port configurations)
   if (!config.ports.empty()) {
     json ports_array = json::array();

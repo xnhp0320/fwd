@@ -314,6 +314,25 @@ int main() {
     }
   }
 
+  // Test: session_capacity is printed when non-zero
+  {
+    DpdkConfig config;
+    config.session_capacity = 2048;
+    std::string json = ConfigPrinter::ToJson(config);
+    TestCase("Config with session_capacity contains field",
+             json.find("\"session_capacity\"") != std::string::npos &&
+             json.find("2048") != std::string::npos);
+  }
+
+  // Test: session_capacity is not printed when zero
+  {
+    DpdkConfig config;
+    config.session_capacity = 0;
+    std::string json = ConfigPrinter::ToJson(config);
+    TestCase("Config with session_capacity=0 omits field",
+             json.find("\"session_capacity\"") == std::string::npos);
+  }
+
   std::cout << "\nAll tests completed.\n";
   return failed_tests > 0 ? 1 : 0;
 }

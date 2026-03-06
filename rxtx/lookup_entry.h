@@ -20,16 +20,17 @@ namespace rxtx {
 // intrusive hook fit in a single cache line.
 //
 // Memory layout (64 bytes):
-//   Offset  0: hook       (slist_member_hook, 8 bytes — one pointer)
-//   Offset  8: src_ip     (IpAddress, 16 bytes)
-//   Offset 24: dst_ip     (IpAddress, 16 bytes)
-//   Offset 40: src_port   (uint16_t, 2 bytes)
-//   Offset 42: dst_port   (uint16_t, 2 bytes)
-//   Offset 44: protocol   (uint8_t, 1 byte)
-//   Offset 45: flags      (uint8_t, 1 byte)
-//   Offset 46: [padding]  (2 bytes)
-//   Offset 48: vni        (uint32_t, 4 bytes)
-//   Offset 52: [padding]  (12 bytes to fill cache line)
+//   Offset  0: hook            (slist_member_hook, 8 bytes — one pointer)
+//   Offset  8: src_ip          (IpAddress, 16 bytes)
+//   Offset 24: dst_ip          (IpAddress, 16 bytes)
+//   Offset 40: src_port        (uint16_t, 2 bytes)
+//   Offset 42: dst_port        (uint16_t, 2 bytes)
+//   Offset 44: protocol        (uint8_t, 1 byte)
+//   Offset 45: flags           (uint8_t, 1 byte)
+//   Offset 46: [padding]       (2 bytes)
+//   Offset 48: vni             (uint32_t, 4 bytes)
+//   Offset 52: cached_version  (uint32_t, 4 bytes)
+//   Offset 56: session         (void*, 8 bytes)
 struct alignas(kCacheLineSize) LookupEntry {
   boost::intrusive::slist_member_hook<> hook;
 
@@ -41,7 +42,8 @@ struct alignas(kCacheLineSize) LookupEntry {
   uint8_t flags;       // bit 0: 1 = IPv6, 0 = IPv4
   // 2 bytes implicit padding
   uint32_t vni;
-  // 12 bytes implicit padding to 64-byte alignment
+  uint32_t cached_version = 0;           // cached SessionEntry version
+  void* session = nullptr;               // pointer to SessionEntry (or nullptr)
 
   bool IsIpv6() const { return flags & 0x01; }
 

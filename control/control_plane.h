@@ -7,6 +7,7 @@
 #include "absl/status/status.h"
 #include "boost/asio/io_context.hpp"
 #include "rcu/rcu_manager.h"
+#include "session/session_table.h"
 
 namespace dpdk_config {
 
@@ -25,6 +26,7 @@ class ControlPlane {
   struct Config {
     std::string socket_path = "/tmp/dpdk_control.sock";
     uint32_t shutdown_timeout_seconds = 10;
+    uint32_t session_capacity = 0;
   };
 
   explicit ControlPlane(PMDThreadManager* thread_manager);
@@ -49,6 +51,7 @@ class ControlPlane {
   std::unique_ptr<UnixSocketServer> socket_server_;
   std::unique_ptr<SignalHandler> signal_handler_;
   std::unique_ptr<CommandHandler> command_handler_;
+  std::unique_ptr<session::SessionTable> session_table_;
   bool shutdown_initiated_ = false;
 };
 

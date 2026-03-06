@@ -373,6 +373,66 @@ int main() {
              result.status().message().find("must be a string") != std::string::npos);
   }
 
+  // Test parsing session_capacity
+  {
+    std::string json_content = R"({
+      "session_capacity": 1024
+    })";
+
+    auto result = ConfigParser::ParseString(json_content);
+    TestCase("Parse session_capacity",
+             result.ok() &&
+             result.value().session_capacity == 1024);
+  }
+
+  // Test session_capacity defaults to 0 when absent
+  {
+    std::string json_content = R"({
+      "core_mask": "0xff"
+    })";
+
+    auto result = ConfigParser::ParseString(json_content);
+    TestCase("session_capacity defaults to 0 when absent",
+             result.ok() &&
+             result.value().session_capacity == 0);
+  }
+
+  // Test session_capacity not added to additional_params
+  {
+    std::string json_content = R"({
+      "session_capacity": 2048,
+      "custom_field": "value"
+    })";
+
+    auto result = ConfigParser::ParseString(json_content);
+    bool not_in_additional = true;
+    if (result.ok()) {
+      for (const auto& param : result.value().additional_params) {
+        if (param.first == "session_capacity") {
+          not_in_additional = false;
+          break;
+        }
+      }
+    }
+    TestCase("session_capacity not added to additional_params",
+             result.ok() &&
+             not_in_additional &&
+             result.value().session_capacity == 2048 &&
+             result.value().additional_params.size() == 1);
+  }
+
+  // Test error when session_capacity is not an unsigned integer
+  {
+    std::string json_content = R"({
+      "session_capacity": "invalid"
+    })";
+
+    auto result = ConfigParser::ParseString(json_content);
+    TestCase("Error when session_capacity is invalid type",
+             !result.ok() &&
+             result.status().message().find("must be an unsigned integer") != std::string::npos);
+  }
+
   std::cout << "\n";
   if (failed_tests == 0) {
     std::cout << "All tests passed!\n";

@@ -18,6 +18,78 @@ void PMDThreadManager::SetRcuManager(rcu::RcuManager* rcu_manager) {
   rcu_manager_ = rcu_manager;
 }
 
+void PMDThreadManager::SetPendingThreadConfigs(std::vector<PmdThreadConfig> configs) {
+  pending_configs_ = std::move(configs);
+}
+
+absl::Status PMDThreadManager::CreatePendingThreads(bool verbose) {
+  if (pending_configs_.empty()) {
+    return absl::OkStatus();
+  }
+
+  // Reset stop flag
+  stop_flag_.store(false, std::memory_order_relaxed);
+  threads_.clear();
+
+  unsigned main_lcore = rte_get_main_lcore();
+
+  if (verbose) {
+    std::cout << "Main lcore: " << main_lcore
+              << " (reserved for control plane)\n";
+    std::cout << "Creating " << pending_configs_.size() << " PMD thread(s)\n";
+  }
+
+  struct rte_rcu_qsbr* qsbr_var =
+      rcu_manager_ ? rcu_manager_->GetQsbrVar() : nullptr;
+
+  for (const auto& config : pending_configs_) {
+    if (config.lcore_id == main_lcore) {
+      continue;
+    }
+
+    // Validate processor
+    auto& registry = processor::ProcessorRegistry::Instance();
+    std::string proc_name = config.processor_name.empty()
+        ? processor::ProcessorRegistry::kDefaultProcessorName
+        : config.processor_name;
+
+    auto entry_or = registry.Lookup(proc_name);
+    if (!entry_or.ok()) return entry_or.status();
+
+    auto check_status = (*entry_or)->checker(config.rx_queues, config.tx_queues);
+    if (!check_status.ok()) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("PMD thread on lcore ", config.lcore_id,
+                       ": processor '", proc_name, "' check failed: ",
+                       check_status.message()));
+    }
+
+    if (rcu_manager_ != nullptr) {
+      absl::Status reg_status = rcu_manager_->RegisterThread(config.lcore_id);
+      if (!reg_status.ok()) return reg_status;
+    }
+
+    auto thread = std::make_unique<PmdThread>(config, &stop_flag_, qsbr_var);
+    threads_[config.lcore_id] = std::move(thread);
+  }
+
+  return absl::OkStatus();
+}
+
+absl::Status PMDThreadManager::LaunchCreatedThreads(bool verbose) {
+  for (auto& [lcore_id, thread] : threads_) {
+    int ret = rte_eal_remote_launch(PmdThread::RunStub, thread.get(), lcore_id);
+    if (ret != 0) {
+      return absl::InternalError(
+          absl::StrCat("Failed to launch PMD thread on lcore ", lcore_id));
+    }
+    if (verbose) {
+      std::cout << "Launched PMD thread on lcore " << lcore_id << "\n";
+    }
+  }
+  return absl::OkStatus();
+}
+
 absl::Status PMDThreadManager::LaunchThreads(
     const std::vector<PmdThreadConfig>& thread_configs, bool verbose) {
   if (thread_configs.empty()) {

@@ -10,7 +10,7 @@ namespace processor {
 // CRTP base class for packet processors.
 // Derived classes implement:
 //   - absl::Status check_impl(rx_queues, tx_queues)  [cold path]
-//   - void process_impl()                              [hot path]
+//   - void process_impl()                              [hot path, called directly]
 template <typename Derived>
 class PacketProcessorBase {
  public:
@@ -22,12 +22,6 @@ class PacketProcessorBase {
   absl::Status Check() {
     return static_cast<Derived*>(this)->check_impl(
         config_.rx_queues, config_.tx_queues);
-  }
-
-  // Hot-path: one iteration of receive → process → transmit.
-  // Delegates to Derived::process_impl(). Inlineable when type is known.
-  void Process() {
-    static_cast<Derived*>(this)->process_impl();
   }
 
   // Export processor-specific data into the context.

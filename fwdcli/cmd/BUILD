@@ -6,6 +6,8 @@ go_library(
         "commands.go",
         "monitor.go",
         "root.go",
+        "sessions.go",
+        "show.go",
         "shutdown.go",
         "stats.go",
         "status.go",

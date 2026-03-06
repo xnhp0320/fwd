@@ -118,12 +118,11 @@ absl::StatusOr<std::unique_ptr<PMDThreadManager>> DpdkInitializer::Initialize(
     thread_manager->SetPortManager(std::move(port_manager));
   }
   
-  if (!config.pmd_threads.empty()) {
-    absl::Status launch_status = thread_manager->LaunchThreads(config.pmd_threads, verbose);
-    if (!launch_status.ok()) {
-      return launch_status;
-    }
-  }
+  // NOTE: PMD threads are NOT launched here. The caller must call
+  // thread_manager->LaunchThreads() after wiring any per-thread context
+  // (e.g. session_table) so that ExportProcessorData sees the full context.
+  // Store the thread configs so the caller can launch later.
+  thread_manager->SetPendingThreadConfigs(config.pmd_threads);
 
   return thread_manager;
 }

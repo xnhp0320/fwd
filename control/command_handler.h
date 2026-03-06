@@ -10,6 +10,7 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/status/statusor.h"
 #include "nlohmann/json.hpp"
+#include "session/session_table.h"
 
 namespace rcu {
 class RcuManager;
@@ -48,6 +49,9 @@ class CommandHandler {
   // Set the RCU manager for async grace-period operations.
   void SetRcuManager(rcu::RcuManager* rcu_manager);
 
+  // Set the session table for get_sessions command.
+  void SetSessionTable(session::SessionTable* session_table);
+
  private:
   struct CommandRequest {
     std::string command;
@@ -79,6 +83,7 @@ class CommandHandler {
   CommandResponse HandleGetStats(const nlohmann::json& params);
   CommandResponse HandleListCommands(const nlohmann::json& params);
   CommandResponse HandleGetFlowTable(const nlohmann::json& params);
+  CommandResponse HandleGetSessions(const nlohmann::json& params);
 
   // Two-phase async implementation of get_flow_table.
   // Phase 1: collect tables, SetModifiable(false), schedule grace period.
@@ -88,6 +93,7 @@ class CommandHandler {
   absl::flat_hash_map<std::string, CommandEntry> commands_;
   PMDThreadManager* thread_manager_;  // Not owned
   rcu::RcuManager* rcu_manager_ = nullptr;  // Not owned
+  session::SessionTable* session_table_ = nullptr;  // Not owned
   std::function<void()> shutdown_callback_;
 };
 

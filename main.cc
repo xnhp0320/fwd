@@ -71,15 +71,31 @@ int main(int argc, char **argv) {
     std::cout << "Main thread running on lcore " << rte_lcore_id() 
               << " (control plane)\n";
 
-    // Create and initialize the control plane
+    // Phase 1: Create PMD thread objects (but don't launch yet).
+    auto create_status = thread_manager->CreatePendingThreads(verbose);
+    if (!create_status.ok()) {
+      std::cerr << "PMD thread creation error: " << create_status << "\n";
+      return 1;
+    }
+
+    // Phase 2: Initialize control plane (creates session table and wires
+    // it into each thread's ProcessorContext).
     dpdk_config::ControlPlane control_plane(thread_manager.get());
     
     dpdk_config::ControlPlane::Config control_config;
     control_config.socket_path = socket_path;
+    control_config.session_capacity = config_or->session_capacity;
     
     auto init_status = control_plane.Initialize(control_config);
     if (!init_status.ok()) {
       std::cerr << "Control plane initialization error: " << init_status << "\n";
+      return 1;
+    }
+
+    // Phase 3: Launch PMD threads — session_table is already in each context.
+    auto launch_status = thread_manager->LaunchCreatedThreads(verbose);
+    if (!launch_status.ok()) {
+      std::cerr << "PMD thread launch error: " << launch_status << "\n";
       return 1;
     }
 

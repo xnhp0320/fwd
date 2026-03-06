@@ -86,6 +86,26 @@ absl::Status ControlPlane::Initialize(const Config& config) {
     thread_manager_->SetRcuManager(rcu_manager_.get());
   }
 
+  // Create SessionTable if configured.
+  if (config_.session_capacity > 0) {
+    session_table_ = std::make_unique<session::SessionTable>();
+    session::SessionTable::Config st_config;
+    st_config.capacity = config_.session_capacity;
+    auto st_status = session_table_->Init(st_config, rcu_manager_->GetQsbrVar());
+    if (!st_status.ok()) return st_status;
+
+    // Wire session table into each PMD thread's ProcessorContext.
+    if (thread_manager_) {
+      for (uint32_t lcore_id : thread_manager_->GetLcoreIds()) {
+        PmdThread* thread = thread_manager_->GetThread(lcore_id);
+        if (thread) {
+          thread->GetMutableProcessorContext().session_table =
+              session_table_.get();
+        }
+      }
+    }
+  }
+
   // Initialize CommandHandler with shutdown callback
   command_handler_ = std::make_unique<CommandHandler>(
       thread_manager_,
@@ -93,6 +113,11 @@ absl::Status ControlPlane::Initialize(const Config& config) {
 
   // Wire RCU manager into the command handler for async grace-period operations.
   command_handler_->SetRcuManager(rcu_manager_.get());
+
+  // Wire session table into the command handler for get_sessions command.
+  if (session_table_) {
+    command_handler_->SetSessionTable(session_table_.get());
+  }
 
   // Initialize UnixSocketServer
   socket_server_ = std::make_unique<UnixSocketServer>(
@@ -211,6 +236,10 @@ void ControlPlane::Shutdown() {
       }
     }
   }
+
+  // Destroy SessionTable after PMD threads stop (they hold SessionEntry
+  // pointers) but before RCU manager is destroyed (hash references QSBR var).
+  session_table_.reset();
 
   // Stop the event loop
   if (io_context_) {

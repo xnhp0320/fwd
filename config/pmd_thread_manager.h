@@ -32,6 +32,17 @@ class PMDThreadManager {
   // When nullptr (default), PMDThreadManager operates without RCU support.
   void SetRcuManager(rcu::RcuManager* rcu_manager);
 
+  // Store thread configs for deferred launch.
+  void SetPendingThreadConfigs(std::vector<PmdThreadConfig> configs);
+
+  // Create PmdThread objects from pending configs without launching them.
+  // After this call, GetThread/GetLcoreIds work so callers can wire
+  // per-thread context (e.g. session_table) before the hot loop starts.
+  absl::Status CreatePendingThreads(bool verbose = false);
+
+  // Launch previously created threads via rte_eal_remote_launch.
+  absl::Status LaunchCreatedThreads(bool verbose = false);
+
   // Initialize and launch all PMD threads from configuration
   // Must be called after rte_eal_init()
   // Skips the main lcore (reserved for control plane)
@@ -67,6 +78,9 @@ class PMDThreadManager {
 
   // Map of lcore_id to PMDThread instances
   std::unordered_map<uint32_t, std::unique_ptr<PmdThread>> threads_;
+
+  // Thread configs stored for deferred launch.
+  std::vector<PmdThreadConfig> pending_configs_;
 };
 
 }  // namespace dpdk_config

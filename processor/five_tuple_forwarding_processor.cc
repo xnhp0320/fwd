@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 
+#include <rte_cycles.h>
 #include <rte_ethdev.h>
 #include <rte_mbuf.h>
 
@@ -10,6 +11,9 @@
 #include "rxtx/batch.h"
 #include "rxtx/packet.h"
 #include "rxtx/packet_metadata.h"
+#include "session/session_entry.h"
+#include "session/session_key.h"
+#include "session/session_table.h"
 
 namespace processor {
 
@@ -48,20 +52,72 @@ void FiveTupleForwardingProcessor::process_impl() {
       continue;
     }
 
-    // Parse each packet and perform flow-table lookup/insert.
+    // Parse each packet and perform two-tier flow-table / session lookup.
     for (uint16_t i = 0; i < batch.Count(); ++i) {
       rxtx::Packet& pkt = rxtx::Packet::from(batch.Data()[i]);
       rxtx::PacketMetadata meta{};
       auto result = rxtx::PacketMetadata::Parse(pkt, meta);
-      if (result == rxtx::ParseResult::kOk) {
-        rxtx::LookupEntry* entry = table_.Find(meta);
-        if (entry == nullptr) {
-          table_.Insert(meta.src_ip, meta.dst_ip, meta.src_port, meta.dst_port,
-                        meta.protocol, meta.vni,
-                        static_cast<uint8_t>(meta.flags & rxtx::kFlagIpv6));
+      if (result != rxtx::ParseResult::kOk) {
+        // Parse failed — skip lookup but still forward the packet.
+        continue;
+      }
+
+      rxtx::LookupEntry* entry = table_.Find(meta);
+
+      if (entry != nullptr && session_table_ != nullptr) {
+        // L1 hit — validate session version.
+        if (entry->session != nullptr) {
+          auto* se =
+              static_cast<session::SessionEntry*>(entry->session);
+          uint32_t current_ver =
+              se->version.load(std::memory_order_relaxed);
+          if (entry->cached_version == current_ver) {
+            // Fast path: session valid, update timestamp.
+            se->timestamp.store(rte_rdtsc(), std::memory_order_relaxed);
+            continue;
+          }
+          // Version mismatch: invalidate cached pointer.
+          entry->session = nullptr;
+          entry->cached_version = 0;
+        }
+
+        // L2 lookup (session pointer is null — initial or invalidated).
+        session::SessionKey session_key =
+            session::SessionKey::FromMetadata(meta, /*zone_id=*/0);
+        session::SessionEntry* session = session_table_->Lookup(session_key);
+        if (session == nullptr) {
+          session = session_table_->Insert(session_key);
+        }
+        if (session != nullptr) {
+          entry->session = session;
+          entry->cached_version =
+              session->version.load(std::memory_order_relaxed);
+          session->timestamp.store(rte_rdtsc(), std::memory_order_relaxed);
+        }
+
+      } else if (entry == nullptr) {
+        // L1 miss — insert into FastLookupTable.
+        entry = table_.Insert(meta.src_ip, meta.dst_ip, meta.src_port,
+                              meta.dst_port, meta.protocol, meta.vni,
+                              static_cast<uint8_t>(meta.flags & rxtx::kFlagIpv6));
+        if (entry != nullptr && session_table_ != nullptr) {
+          session::SessionKey session_key =
+              session::SessionKey::FromMetadata(meta, /*zone_id=*/0);
+          session::SessionEntry* session =
+              session_table_->Lookup(session_key);
+          if (session == nullptr) {
+            session = session_table_->Insert(session_key);
+          }
+          if (session != nullptr) {
+            entry->session = session;
+            entry->cached_version =
+                session->version.load(std::memory_order_relaxed);
+            session->timestamp.store(rte_rdtsc(), std::memory_order_relaxed);
+          }
         }
       }
-      // If parse fails, skip lookup but still forward the packet.
+      // If entry != nullptr && session_table_ == nullptr: L1 hit, no session
+      // ops — backward compatible behavior.
     }
 
     // Record per-thread stats before transmitting.

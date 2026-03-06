@@ -47,6 +47,7 @@ class PmdThread {
 
   // Access the processor context (populated after Run() starts).
   const processor::ProcessorContext& GetProcessorContext() const { return ctx_; }
+  processor::ProcessorContext& GetMutableProcessorContext() { return ctx_; }
 
   // Static entry point for DPDK remote launch
   // This is the function passed to rte_eal_remote_launch
