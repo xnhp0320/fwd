@@ -4,6 +4,7 @@ go_library(
     name = "cmd",
     srcs = [
         "commands.go",
+        "flows.go",
         "monitor.go",
         "root.go",
         "sessions.go",

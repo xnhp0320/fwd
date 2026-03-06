@@ -70,6 +70,27 @@ type SessionInfo struct {
 type SessionsResult struct {
 	Sessions []SessionInfo `json:"sessions"`
 }
+// FlowEntry represents a single flow table entry.
+type FlowEntry struct {
+	SrcIP    string `json:"src_ip"`
+	DstIP    string `json:"dst_ip"`
+	SrcPort  int    `json:"src_port"`
+	DstPort  int    `json:"dst_port"`
+	Protocol int    `json:"protocol"`
+	VNI      int    `json:"vni"`
+	IsIPv6   bool   `json:"is_ipv6"`
+}
+
+// FlowThread represents flow entries for a single PMD thread.
+type FlowThread struct {
+	LcoreID int         `json:"lcore_id"`
+	Entries []FlowEntry `json:"entries"`
+}
+
+// FlowsResult maps the get_flow_table command result.
+type FlowsResult struct {
+	Threads []FlowThread `json:"threads"`
+}
 
 
 // FormatStatus renders a status response as a human-readable string.
@@ -150,6 +171,45 @@ func FormatSessions(result json.RawMessage) (string, error) {
 		fmt.Fprintf(&b, "%-20s %-20s %-10d %-10d %-6d %-6d %-6s %-8d %d\n",
 			sess.SrcIP, sess.DstIP, sess.SrcPort, sess.DstPort,
 			sess.Protocol, sess.ZoneID, ipv6Str, sess.Version, sess.Timestamp)
+	}
+	return b.String(), nil
+}
+// FormatFlows renders a get_flow_table response as a human-readable table grouped by thread.
+func FormatFlows(result json.RawMessage) (string, error) {
+	var f FlowsResult
+	if err := json.Unmarshal(result, &f); err != nil {
+		return "", fmt.Errorf("failed to parse flow table result: %w", err)
+	}
+
+	var b strings.Builder
+	totalEntries := 0
+	for _, t := range f.Threads {
+		totalEntries += len(t.Entries)
+	}
+
+	if totalEntries == 0 {
+		return "No flow table entries.\n", nil
+	}
+
+	for _, t := range f.Threads {
+		fmt.Fprintf(&b, "Lcore %d (%d entries):\n", t.LcoreID, len(t.Entries))
+		if len(t.Entries) == 0 {
+			fmt.Fprintf(&b, "  (empty)\n")
+			continue
+		}
+		fmt.Fprintf(&b, "  %-20s %-20s %-10s %-10s %-6s %-8s %s\n",
+			"SRC_IP", "DST_IP", "SRC_PORT", "DST_PORT", "PROTO", "VNI", "IPV6")
+		fmt.Fprintf(&b, "  %-20s %-20s %-10s %-10s %-6s %-8s %s\n",
+			"------", "------", "--------", "--------", "-----", "---", "----")
+		for _, e := range t.Entries {
+			ipv6Str := "false"
+			if e.IsIPv6 {
+				ipv6Str = "true"
+			}
+			fmt.Fprintf(&b, "  %-20s %-20s %-10d %-10d %-6d %-8d %s\n",
+				e.SrcIP, e.DstIP, e.SrcPort, e.DstPort, e.Protocol, e.VNI, ipv6Str)
+		}
+		b.WriteString("\n")
 	}
 	return b.String(), nil
 }
