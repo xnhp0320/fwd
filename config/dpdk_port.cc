@@ -201,6 +201,13 @@ absl::Status DpdkPort::ConfigurePort() {
     port_conf.rxmode.mtu = config_.mbuf_size - RTE_ETHER_HDR_LEN - RTE_ETHER_CRC_LEN;
   }
 
+  ret = rte_eth_promiscuous_enable(config_.port_id);
+  if (ret != 0) {
+    return absl::InternalError(
+               absl::StrCat("Error during enabling promiscuous mode for port ",
+                config_.port_id, ": ", rte_strerror(-ret)));
+  }
+
   // Configure the port
   ret = rte_eth_dev_configure(config_.port_id, config_.num_rx_queues,
                                config_.num_tx_queues, &port_conf);
