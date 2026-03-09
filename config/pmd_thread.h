@@ -72,7 +72,7 @@ class PmdThread {
   processor::PacketStats stats_;
 
   // Per-thread processor context (stats pointer set in constructor,
-  // processor_data set by the launcher during Run()).
+  // flow-table/session resources set by the launcher during Run()).
   processor::ProcessorContext ctx_;
 }
 ;

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <iostream>
+#include <map>
 #include <set>
 #include <string>
 #include <utility>
@@ -30,13 +31,13 @@ int main() {
   // Create a CommandHandler with nullptr thread_manager and no-op shutdown.
   CommandHandler handler(nullptr, []() {});
 
-  // --- GetAllCommands returns all 6 commands with correct tags ---
+  // --- GetAllCommands returns all default common commands ---
   // Requirements: 7.1, 7.2, 7.4
   {
     std::cout << "--- GetAllCommands tests ---\n";
 
     auto all = handler.GetAllCommands();
-    TestCase("GetAllCommands returns 6 commands", all.size() == 6);
+    TestCase("GetAllCommands returns 5 commands", all.size() == 5);
 
     // Build a map of name -> tag for easy lookup
     std::map<std::string, std::string> cmd_map(all.begin(), all.end());
@@ -50,10 +51,6 @@ int main() {
     // list_commands has tag "common" (Requirement 10.1)
     TestCase("list_commands has tag common",
              cmd_map["list_commands"] == "common");
-
-    // get_flow_table has tag "five_tuple_forwarding" (Requirement 8.1)
-    TestCase("get_flow_table has tag five_tuple_forwarding",
-             cmd_map["get_flow_table"] == "five_tuple_forwarding");
 
     std::cout << "\n";
   }
@@ -78,15 +75,10 @@ int main() {
              common_set.count("get_stats") == 1);
     TestCase("common contains list_commands",
              common_set.count("list_commands") == 1);
-    TestCase("common does not contain get_flow_table",
-             common_set.count("get_flow_table") == 0);
-
-    // GetCommandsByTag("five_tuple_forwarding") returns only get_flow_table
+    // Processor-specific commands are not registered by default.
     auto ftf = handler.GetCommandsByTag("five_tuple_forwarding");
-    TestCase("GetCommandsByTag(five_tuple_forwarding) returns 1 command",
-             ftf.size() == 1);
-    TestCase("five_tuple_forwarding contains get_flow_table",
-             ftf.size() == 1 && ftf[0] == "get_flow_table");
+    TestCase("GetCommandsByTag(five_tuple_forwarding) returns empty",
+             ftf.empty());
 
     // Unknown tag returns empty
     auto unknown = handler.GetCommandsByTag("nonexistent_tag");
@@ -96,10 +88,10 @@ int main() {
     std::cout << "\n";
   }
 
-  // --- HandleCommand: get_flow_table returns "not_supported" without callback ---
+  // --- HandleCommand: unregistered get_flow_table returns unknown command ---
   // Requirements: 8.3
   {
-    std::cout << "--- get_flow_table not_supported tests ---\n";
+    std::cout << "--- get_flow_table unknown command tests ---\n";
 
     std::string request = R"({"command":"get_flow_table"})";
     auto response_opt = handler.HandleCommand(request);
@@ -108,8 +100,8 @@ int main() {
 
     TestCase("get_flow_table status is error",
              response["status"] == "error");
-    TestCase("get_flow_table error is not_supported",
-             response["error"] == "not_supported");
+    TestCase("get_flow_table error is unknown command",
+             response["error"] == "Unknown command: get_flow_table");
 
     std::cout << "\n";
   }
@@ -128,7 +120,7 @@ int main() {
              response["status"] == "success");
 
     auto commands = response["result"]["commands"];
-    TestCase("list_commands returns 6 commands", commands.size() == 6);
+    TestCase("list_commands returns 5 commands", commands.size() == 5);
 
     // Verify all command names are present
     std::set<std::string> names;
@@ -143,9 +135,6 @@ int main() {
              names.count("get_stats") == 1);
     TestCase("unfiltered contains list_commands",
              names.count("list_commands") == 1);
-    TestCase("unfiltered contains get_flow_table",
-             names.count("get_flow_table") == 1);
-
     std::cout << "\n";
   }
 
@@ -178,18 +167,66 @@ int main() {
     }
     TestCase("all filtered commands have tag common", all_common);
 
-    // Filter by "five_tuple_forwarding"
+    // Filter by "five_tuple_forwarding" before processor registration.
     std::string request2 =
         R"({"command":"list_commands","params":{"tag":"five_tuple_forwarding"}})";
     auto response_opt2 = handler.HandleCommand(request2);
     json response2 = json::parse(*response_opt2);
 
     auto commands2 = response2["result"]["commands"];
-    TestCase("list_commands(five_tuple_forwarding) returns 1 command",
-             commands2.size() == 1);
-    TestCase("filtered result is get_flow_table",
-             commands2.size() == 1 &&
-                 commands2[0]["name"] == "get_flow_table");
+    TestCase("list_commands(five_tuple_forwarding) returns 0 command",
+             commands2.empty());
+
+    std::cout << "\n";
+  }
+
+  // --- External registration: sync + async commands ---
+  {
+    std::cout << "--- dynamic registration tests ---\n";
+
+    handler.RegisterSyncCommand(
+        "custom_sync", "custom_tag",
+        [](const json& params) -> CommandResult {
+          json result = json::object();
+          result["echo"] = params;
+          return CommandResult::Success(result);
+        });
+
+    auto sync_resp_opt = handler.HandleCommand(
+        R"({"command":"custom_sync","params":{"k":"v"}})");
+    TestCase("custom_sync returns value", sync_resp_opt.has_value());
+    json sync_resp = json::parse(*sync_resp_opt);
+    TestCase("custom_sync status is success",
+             sync_resp["status"] == "success");
+    TestCase("custom_sync echoes params",
+             sync_resp["result"]["echo"]["k"] == "v");
+
+    bool async_called = false;
+    std::string async_payload;
+    handler.RegisterAsyncCommand(
+        "custom_async", "custom_tag",
+        [](const json& params, CommandResultCallback done) {
+          json result = json::object();
+          result["seen"] = params.value("v", 0);
+          done(CommandResult::Success(result));
+        });
+
+    auto async_resp_opt = handler.HandleCommand(
+        R"({"command":"custom_async","params":{"v":7}})",
+        [&async_called, &async_payload](const std::string& payload) {
+          async_called = true;
+          async_payload = payload;
+        });
+
+    TestCase("custom_async returns nullopt", !async_resp_opt.has_value());
+    TestCase("custom_async callback called", async_called);
+    if (async_called) {
+      json async_resp = json::parse(async_payload);
+      TestCase("custom_async status is success",
+               async_resp["status"] == "success");
+      TestCase("custom_async result is preserved",
+               async_resp["result"]["seen"] == 7);
+    }
 
     std::cout << "\n";
   }

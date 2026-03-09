@@ -12,7 +12,10 @@ cc_library(
 cc_library(
     name = "processor_context",
     hdrs = ["processor_context.h"],
-    deps = [":packet_stats"],
+    deps = [
+        ":packet_stats",
+        "//rxtx:lookup_entry",
+    ],
 )
 
 # CRTP base class for packet processors (header-only)
@@ -35,6 +38,7 @@ cc_library(
         ":packet_processor_base",
         ":processor_context",
         "//config:dpdk_config",
+        "//control:command_api",
         "//:dpdk_lib",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/status",
@@ -79,6 +83,7 @@ cc_library(
         ":processor_context",
         ":processor_registry",
         "//config:dpdk_config",
+        "//control:command_api",
         "//rxtx:batch",
         "//rxtx:fast_lookup_table",
         "//rxtx:packet",

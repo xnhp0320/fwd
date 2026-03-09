@@ -1,5 +1,16 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 
+# Shared command registration API between control plane and processors.
+cc_library(
+    name = "command_api",
+    hdrs = ["command_api.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@abseil-cpp//absl/status",
+        "@nlohmann_json//:json",
+    ],
+)
+
 # Command handler for JSON command processing
 cc_library(
     name = "command_handler",
@@ -7,10 +18,8 @@ cc_library(
     hdrs = ["command_handler.h"],
     visibility = ["//visibility:public"],
     deps = [
+        ":command_api",
         "//config:pmd_thread_manager",
-        "//rcu:rcu_manager",
-        "//rxtx:fast_lookup_table",
-        "//rxtx:lookup_entry",
         "//session:session_table",
         "//:dpdk_lib",
         "@abseil-cpp//absl/container:flat_hash_map",
@@ -55,6 +64,7 @@ cc_library(
         ":signal_handler",
         ":unix_socket_server",
         "//config:pmd_thread_manager",
+        "//processor:processor_registry",
         "//rcu:rcu_manager",
         "//session:session_table",
         "//:dpdk_lib",

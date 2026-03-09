@@ -1,6 +1,11 @@
 #include "processor/five_tuple_forwarding_processor.h"
 
+#include <arpa/inet.h>
 #include <cstdlib>
+#include <exception>
+#include <memory>
+#include <string>
+#include <vector>
 
 #include <rte_cycles.h>
 #include <rte_ethdev.h>
@@ -17,6 +22,34 @@
 
 namespace processor {
 
+namespace {
+
+nlohmann::json SerializeLookupEntry(const rxtx::LookupEntry& entry) {
+  nlohmann::json e;
+  char ip_buf[INET6_ADDRSTRLEN];
+
+  if (entry.IsIpv6()) {
+    inet_ntop(AF_INET6, entry.src_ip.v6, ip_buf, sizeof(ip_buf));
+    e["src_ip"] = ip_buf;
+    inet_ntop(AF_INET6, entry.dst_ip.v6, ip_buf, sizeof(ip_buf));
+    e["dst_ip"] = ip_buf;
+  } else {
+    inet_ntop(AF_INET, &entry.src_ip.v4, ip_buf, sizeof(ip_buf));
+    e["src_ip"] = ip_buf;
+    inet_ntop(AF_INET, &entry.dst_ip.v4, ip_buf, sizeof(ip_buf));
+    e["dst_ip"] = ip_buf;
+  }
+
+  e["src_port"] = entry.src_port;
+  e["dst_port"] = entry.dst_port;
+  e["protocol"] = entry.protocol;
+  e["vni"] = entry.vni;
+  e["is_ipv6"] = entry.IsIpv6();
+  return e;
+}
+
+}  // namespace
+
 FiveTupleForwardingProcessor::FiveTupleForwardingProcessor(
     const dpdk_config::PmdThreadConfig& config, PacketStats* stats)
     : PacketProcessorBase(config),
@@ -27,7 +60,8 @@ FiveTupleForwardingProcessor::FiveTupleForwardingProcessor(
           return static_cast<std::size_t>(std::atol(it->second.c_str()));
         }
         return kDefaultCapacity;
-      }()) {}
+      }()),
+      flow_table_inspector_(&table_) {}
 
 absl::Status FiveTupleForwardingProcessor::check_impl(
     const std::vector<dpdk_config::QueueAssignment>& /*rx_queues*/,
@@ -163,6 +197,80 @@ absl::Status FiveTupleForwardingProcessor::CheckParams(
     }
   }
   return absl::OkStatus();
+}
+
+void FiveTupleForwardingProcessor::RegisterControlCommands(
+    dpdk_config::CommandRegistry& registry,
+    const dpdk_config::ProcessorCommandRuntime& runtime) {
+  registry.RegisterAsyncCommand(
+      "get_flow_table", "five_tuple_forwarding",
+      [runtime](const nlohmann::json& /*params*/,
+                dpdk_config::CommandResultCallback done) mutable {
+        if (!runtime.get_lcore_ids || !runtime.get_flow_table_inspector ||
+            !runtime.call_after_grace_period) {
+          done(dpdk_config::CommandResult::Error("not_supported"));
+          return;
+        }
+
+        struct FlowTableInfo {
+          uint32_t lcore_id;
+          processor::FlowTableInspector* inspector;
+        };
+        auto tables = std::make_shared<std::vector<FlowTableInfo>>();
+
+        for (uint32_t lcore_id : runtime.get_lcore_ids()) {
+          auto* inspector = runtime.get_flow_table_inspector(lcore_id);
+          tables->push_back({lcore_id, inspector});
+          if (inspector != nullptr) {
+            inspector->SetModifiable(false);
+          }
+        }
+
+        auto restore_modifiable = [tables]() {
+          for (const auto& info : *tables) {
+            if (info.inspector != nullptr) {
+              info.inspector->SetModifiable(true);
+            }
+          }
+        };
+
+        auto shared_done =
+            std::make_shared<dpdk_config::CommandResultCallback>(std::move(done));
+
+        auto status = runtime.call_after_grace_period(
+            [tables, shared_done, restore_modifiable]() {
+              nlohmann::json threads_array = nlohmann::json::array();
+
+              try {
+                for (const auto& info : *tables) {
+                  nlohmann::json entries = nlohmann::json::array();
+                  if (info.inspector != nullptr) {
+                    info.inspector->ForEachEntry(
+                        [&entries](const rxtx::LookupEntry& entry) {
+                          entries.push_back(SerializeLookupEntry(entry));
+                        });
+                  }
+                  threads_array.push_back(
+                      {{"lcore_id", info.lcore_id}, {"entries", entries}});
+                }
+              } catch (const std::exception&) {
+                restore_modifiable();
+                (*shared_done)(dpdk_config::CommandResult::Error(
+                    "Failed to serialize flow table entries"));
+                return;
+              }
+
+              restore_modifiable();
+              (*shared_done)(dpdk_config::CommandResult::Success(
+                  {{"threads", threads_array}}));
+            });
+
+        if (!status.ok()) {
+          restore_modifiable();
+          (*shared_done)(
+              dpdk_config::CommandResult::Error("Failed to schedule grace period"));
+        }
+      });
 }
 
 REGISTER_PROCESSOR("five_tuple_forwarding", FiveTupleForwardingProcessor);

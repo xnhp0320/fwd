@@ -26,7 +26,8 @@ class PacketProcessorBase {
 
   // Export processor-specific data into the context.
   // Default is a no-op; processors with internal data structures
-  // (e.g. FiveTupleForwardingProcessor) override to set processor_data.
+  // (e.g. FiveTupleForwardingProcessor) override to populate
+  // flow_table_inspector/session resources.
   void ExportProcessorData(ProcessorContext& /*ctx*/) {}
 
  protected:

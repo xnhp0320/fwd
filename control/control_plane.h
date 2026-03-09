@@ -44,6 +44,8 @@ class ControlPlane {
   void Shutdown();
 
  private:
+  absl::Status RegisterProcessorCommands();
+
   PMDThreadManager* thread_manager_;  // Not owned
   Config config_;
   std::unique_ptr<boost::asio::io_context> io_context_;
@@ -52,6 +54,7 @@ class ControlPlane {
   std::unique_ptr<SignalHandler> signal_handler_;
   std::unique_ptr<CommandHandler> command_handler_;
   std::unique_ptr<session::SessionTable> session_table_;
+  bool processor_commands_registered_ = false;
   bool shutdown_initiated_ = false;
 };
 

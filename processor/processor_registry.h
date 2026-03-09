@@ -4,6 +4,8 @@
 #include <atomic>
 #include <functional>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <rte_lcore.h>
@@ -13,6 +15,7 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "config/dpdk_config.h"
+#include "control/command_api.h"
 #include "processor/processor_context.h"
 
 namespace processor {
@@ -41,7 +44,19 @@ struct ProcessorEntry {
   LauncherFn launcher;
   CheckFn checker;
   ParamCheckFn param_checker;
+  dpdk_config::ProcessorCommandRegistrar command_registrar;
 };
+
+template <typename ProcessorType, typename = void>
+struct HasRegisterControlCommands : std::false_type {};
+
+template <typename ProcessorType>
+struct HasRegisterControlCommands<
+    ProcessorType,
+    std::void_t<decltype(ProcessorType::RegisterControlCommands(
+        std::declval<dpdk_config::CommandRegistry&>(),
+        std::declval<const dpdk_config::ProcessorCommandRuntime&>()))>>
+    : std::true_type {};
 
 class ProcessorRegistry {
  public:
@@ -104,6 +119,13 @@ ProcessorEntry MakeProcessorEntry() {
           -> absl::Status {
         return ProcessorType::CheckParams(params);
       },
+      .command_registrar =
+          [](dpdk_config::CommandRegistry& registry,
+             const dpdk_config::ProcessorCommandRuntime& runtime) {
+            if constexpr (HasRegisterControlCommands<ProcessorType>::value) {
+              ProcessorType::RegisterControlCommands(registry, runtime);
+            }
+          },
   };
 }
 

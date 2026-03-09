@@ -7,12 +7,14 @@
 #include <chrono>
 #include <future>
 #include <iostream>
+#include <unordered_set>
 
 #include "absl/strings/str_cat.h"
 #include "config/pmd_thread_manager.h"
 #include "control/command_handler.h"
 #include "control/signal_handler.h"
 #include "control/unix_socket_server.h"
+#include "processor/processor_registry.h"
 #include "rcu/rcu_manager.h"
 
 namespace dpdk_config {
@@ -111,9 +113,6 @@ absl::Status ControlPlane::Initialize(const Config& config) {
       thread_manager_,
       [this]() { Shutdown(); });
 
-  // Wire RCU manager into the command handler for async grace-period operations.
-  command_handler_->SetRcuManager(rcu_manager_.get());
-
   // Wire session table into the command handler for get_sessions command.
   if (session_table_) {
     command_handler_->SetSessionTable(session_table_.get());
@@ -138,6 +137,11 @@ absl::Status ControlPlane::Run() {
   if (!io_context_) {
     return absl::FailedPreconditionError(
         "ControlPlane not initialized. Call Initialize() first.");
+  }
+
+  auto register_status = RegisterProcessorCommands();
+  if (!register_status.ok()) {
+    return register_status;
   }
 
   // Start signal handler
@@ -176,6 +180,63 @@ absl::Status ControlPlane::Run() {
 
   std::cout << "ControlPlane event loop stopped\n";
   
+  return absl::OkStatus();
+}
+
+absl::Status ControlPlane::RegisterProcessorCommands() {
+  if (processor_commands_registered_ || command_handler_ == nullptr ||
+      thread_manager_ == nullptr) {
+    return absl::OkStatus();
+  }
+
+  dpdk_config::ProcessorCommandRuntime runtime;
+  runtime.get_lcore_ids = [this]() {
+    return thread_manager_ ? thread_manager_->GetLcoreIds()
+                           : std::vector<uint32_t>{};
+  };
+  runtime.get_flow_table_inspector = [this](uint32_t lcore_id) {
+    if (!thread_manager_) {
+      return static_cast<processor::FlowTableInspector*>(nullptr);
+    }
+    PmdThread* thread = thread_manager_->GetThread(lcore_id);
+    if (thread == nullptr) {
+      return static_cast<processor::FlowTableInspector*>(nullptr);
+    }
+    return thread->GetProcessorContext().flow_table_inspector;
+  };
+  runtime.call_after_grace_period = [this](std::function<void()> cb) {
+    if (!rcu_manager_) {
+      return absl::FailedPreconditionError("RCU manager is not initialized");
+    }
+    return rcu_manager_->CallAfterGracePeriod(std::move(cb));
+  };
+
+  std::unordered_set<std::string> registered_processors;
+  auto& registry = processor::ProcessorRegistry::Instance();
+  for (uint32_t lcore_id : thread_manager_->GetLcoreIds()) {
+    PmdThread* thread = thread_manager_->GetThread(lcore_id);
+    if (thread == nullptr) {
+      continue;
+    }
+
+    const std::string processor_name =
+        thread->GetProcessorName().empty()
+            ? processor::ProcessorRegistry::kDefaultProcessorName
+            : thread->GetProcessorName();
+
+    if (!registered_processors.insert(processor_name).second) {
+      continue;
+    }
+
+    auto entry_or = registry.Lookup(processor_name);
+    if (!entry_or.ok()) {
+      return entry_or.status();
+    }
+
+    (*entry_or)->command_registrar(*command_handler_, runtime);
+  }
+
+  processor_commands_registered_ = true;
   return absl::OkStatus();
 }
 
