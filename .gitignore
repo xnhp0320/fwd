@@ -8,3 +8,4 @@ bazel-testlogs
 tests/test-results/
 tests/.venv/
 compile_commands.json
+.cache/*
