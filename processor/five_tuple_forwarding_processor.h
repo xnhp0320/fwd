@@ -10,6 +10,7 @@
 #include "processor/packet_processor_base.h"
 #include "processor/packet_stats.h"
 #include "processor/processor_context.h"
+#include "processor/pmd_job.h"
 #include "rxtx/fast_lookup_table.h"
 
 namespace session {
@@ -24,6 +25,7 @@ class FiveTupleForwardingProcessor
   explicit FiveTupleForwardingProcessor(
       const dpdk_config::PmdThreadConfig& config,
       PacketStats* stats = nullptr);
+  ~FiveTupleForwardingProcessor();
 
   // Check: return InvalidArgument if tx_queues is empty, OK otherwise.
   absl::Status check_impl(
@@ -53,6 +55,10 @@ class FiveTupleForwardingProcessor
     if (ctx.session_table) {
       session_table_ = static_cast<session::SessionTable*>(ctx.session_table);
     }
+    job_runner_ = ctx.pmd_job_runner;
+    if (job_runner_ != nullptr && !gc_job_registered_) {
+      gc_job_registered_ = job_runner_->Register(&flow_gc_job_);
+    }
   }
 
  private:
@@ -78,8 +84,16 @@ class FiveTupleForwardingProcessor
 
   static constexpr uint16_t kBatchSize = 32;
   static constexpr std::size_t kDefaultCapacity = 65536;
+  void RefreshGcScheduling();
+  bool ShouldTriggerGc() const;
+  void RunFlowGc(uint64_t now_tsc);
+
   PacketStats* stats_ = nullptr;
   session::SessionTable* session_table_ = nullptr;
+  processor::PmdJobRunner* job_runner_ = nullptr;
+  processor::PmdJob flow_gc_job_;
+  bool gc_job_registered_ = false;
+  bool gc_job_scheduled_ = false;
   FlowTable table_;
   FlowTableInspectorImpl flow_table_inspector_;
 };

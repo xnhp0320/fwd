@@ -89,6 +89,7 @@ cc_library(
         ":dpdk_config",
         "//:dpdk_lib",
         "//processor:packet_stats",
+        "//processor:pmd_job",
         "//processor:processor_context",
         "//processor:processor_registry",
         "@abseil-cpp//absl/status",

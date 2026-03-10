@@ -54,6 +54,7 @@ FiveTupleForwardingProcessor::FiveTupleForwardingProcessor(
     const dpdk_config::PmdThreadConfig& config, PacketStats* stats)
     : PacketProcessorBase(config),
       stats_(stats),
+      flow_gc_job_([this](uint64_t now_tsc) { RunFlowGc(now_tsc); }),
       table_([&config]() -> std::size_t {
         auto it = config.processor_params.find("capacity");
         if (it != config.processor_params.end()) {
@@ -62,6 +63,14 @@ FiveTupleForwardingProcessor::FiveTupleForwardingProcessor(
         return kDefaultCapacity;
       }()),
       flow_table_inspector_(&table_) {}
+
+FiveTupleForwardingProcessor::~FiveTupleForwardingProcessor() {
+  if (job_runner_ != nullptr && gc_job_registered_) {
+    (void)job_runner_->Unregister(&flow_gc_job_);
+    gc_job_registered_ = false;
+    gc_job_scheduled_ = false;
+  }
+}
 
 absl::Status FiveTupleForwardingProcessor::check_impl(
     const std::vector<dpdk_config::QueueAssignment>& /*rx_queues*/,
@@ -74,6 +83,8 @@ absl::Status FiveTupleForwardingProcessor::check_impl(
 }
 
 void FiveTupleForwardingProcessor::process_impl() {
+  RefreshGcScheduling();
+
   const auto& tx = config().tx_queues[0];
 
   for (const auto& rx : config().rx_queues) {
@@ -174,6 +185,30 @@ void FiveTupleForwardingProcessor::process_impl() {
     // Release ownership so the Batch destructor doesn't double-free.
     batch.Release();
   }
+}
+
+void FiveTupleForwardingProcessor::RefreshGcScheduling() {
+  if (job_runner_ == nullptr || !gc_job_registered_) return;
+
+  bool should_run = ShouldTriggerGc();
+  if (should_run && !gc_job_scheduled_) {
+    gc_job_scheduled_ = job_runner_->Schedule(&flow_gc_job_);
+  } else if (!should_run && gc_job_scheduled_) {
+    if (job_runner_->Unschedule(&flow_gc_job_)) {
+      gc_job_scheduled_ = false;
+    }
+  }
+}
+
+bool FiveTupleForwardingProcessor::ShouldTriggerGc() const {
+  // Placeholder policy. Real trigger conditions will consider traffic load and
+  // flow-table pressure.
+  return false;
+}
+
+void FiveTupleForwardingProcessor::RunFlowGc(uint64_t /*now_tsc*/) {
+  // Placeholder GC task. Concrete stale-entry cleanup will be implemented
+  // in follow-up changes.
 }
 
 absl::Status FiveTupleForwardingProcessor::CheckParams(

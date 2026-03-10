@@ -16,6 +16,7 @@ PmdThread::PmdThread(const PmdThreadConfig& config, std::atomic<bool>* stop_flag
                      struct rte_rcu_qsbr* qsbr_var)
     : config_(config), stop_flag_ptr_(stop_flag), qsbr_var_(qsbr_var) {
   ctx_.stats = &stats_;
+  ctx_.pmd_job_runner = &job_runner_;
 }
 
 int PmdThread::RunStub(void* arg) {

@@ -8,6 +8,14 @@ cc_library(
     hdrs = ["packet_stats.h"],
 )
 
+cc_library(
+    name = "pmd_job",
+    hdrs = ["pmd_job.h"],
+    deps = [
+        "@boost.intrusive",
+    ],
+)
+
 # Extensible per-thread context for processor launchers (header-only)
 cc_library(
     name = "processor_context",
@@ -36,6 +44,7 @@ cc_library(
     hdrs = ["processor_registry.h"],
     deps = [
         ":packet_processor_base",
+        ":pmd_job",
         ":processor_context",
         "//config:dpdk_config",
         "//control:command_api",
@@ -80,6 +89,7 @@ cc_library(
     deps = [
         ":packet_processor_base",
         ":packet_stats",
+        ":pmd_job",
         ":processor_context",
         ":processor_registry",
         "//config:dpdk_config",
@@ -96,6 +106,17 @@ cc_library(
         "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/strings",
+    ],
+)
+
+# Five-tuple forwarding processor unit tests
+cc_test(
+    name = "pmd_job_test",
+    size = "small",
+    srcs = ["pmd_job_test.cc"],
+    deps = [
+        ":pmd_job",
+        "@googletest//:gtest_main",
     ],
 )
 

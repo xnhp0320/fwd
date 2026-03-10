@@ -9,6 +9,7 @@
 #include "config/dpdk_config.h"
 #include "processor/packet_stats.h"
 #include "processor/processor_context.h"
+#include "processor/pmd_job.h"
 
 struct rte_rcu_qsbr;
 
@@ -70,6 +71,9 @@ class PmdThread {
 
   // Per-thread packet/byte statistics.
   processor::PacketStats stats_;
+
+  // Per-thread PMD job runner.
+  processor::PmdJobRunner job_runner_;
 
   // Per-thread processor context (stats pointer set in constructor,
   // flow-table/session resources set by the launcher during Run()).

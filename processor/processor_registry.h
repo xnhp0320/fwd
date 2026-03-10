@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include <rte_cycles.h>
 #include <rte_lcore.h>
 #include <rte_rcu_qsbr.h>
 
@@ -16,6 +17,7 @@
 #include "absl/status/statusor.h"
 #include "config/dpdk_config.h"
 #include "control/command_api.h"
+#include "processor/pmd_job.h"
 #include "processor/processor_context.h"
 
 namespace processor {
@@ -96,6 +98,10 @@ ProcessorEntry MakeProcessorEntry() {
         proc.ExportProcessorData(ctx);
         while (!stop_flag->load(std::memory_order_relaxed)) {
           proc.process_impl();  // Direct call — compiler knows exact type.
+          if (ctx.pmd_job_runner != nullptr &&
+              ctx.pmd_job_runner->HasRunnableJobs()) {
+            ctx.pmd_job_runner->RunRunnableJobs(rte_rdtsc());
+          }
           if (qsbr_var) {
             rte_rcu_qsbr_quiescent(qsbr_var, rte_lcore_id());
           }

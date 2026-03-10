@@ -8,6 +8,8 @@
 
 namespace processor {
 
+class PmdJobRunner;
+
 // Read-only flow-table inspector exposed to the control plane.
 // Implementations are owned by packet processors and remain valid
 // for the PMD thread lifetime.
@@ -27,6 +29,7 @@ struct ProcessorContext {
   PacketStats* stats = nullptr;
   FlowTableInspector* flow_table_inspector = nullptr;  // nullptr if unsupported
   void* session_table = nullptr;   // SessionTable* (or nullptr if disabled)
+  PmdJobRunner* pmd_job_runner = nullptr;  // nullptr if not configured
 };
 
 }  // namespace processor
