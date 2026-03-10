@@ -37,10 +37,10 @@ Examples:
   %(prog)s --ports 1 --threads 1 --queues 1
 
   # Custom output path with hugepages enabled
-  %(prog)s --ports 2 --threads 2 --queues 2 --hugepages -o custom.json
+  %(prog)s --ports 2 --threads 4 --queues 4 --hugepages -o custom.json
 
   # Different RX and TX queue counts
-  %(prog)s --ports 2 --threads 2 --rx-queues 2 --tx-queues 1
+  %(prog)s --ports 2 --threads 4 --rx-queues 8 --tx-queues 4
         """
     )
     
@@ -48,38 +48,33 @@ Examples:
         "--ports",
         type=int,
         default=2,
-        choices=[1, 2],
-        help="Number of virtual ports (default: 2, range: 1-2)"
+        help="Number of virtual ports (default: 2, min: 1)"
     )
     
     parser.add_argument(
         "--threads",
         type=int,
         default=2,
-        choices=[1, 2],
-        help="Number of PMD worker threads (default: 2, range: 1-2)"
+        help="Number of PMD worker threads (default: 2, min: 1)"
     )
     
     parser.add_argument(
         "--queues",
         type=int,
         default=2,
-        choices=[1, 2],
-        help="Number of queues per port for both RX and TX (default: 2, range: 1-2)"
+        help="Number of queues per port for both RX and TX (default: 2, min: 1)"
     )
     
     parser.add_argument(
         "--rx-queues",
         type=int,
-        choices=[1, 2],
-        help="Number of RX queues per port (overrides --queues for RX)"
+        help="Number of RX queues per port (overrides --queues for RX, min: 1)"
     )
     
     parser.add_argument(
         "--tx-queues",
         type=int,
-        choices=[1, 2],
-        help="Number of TX queues per port (overrides --queues for TX)"
+        help="Number of TX queues per port (overrides --queues for TX, min: 1)"
     )
     
     parser.add_argument(
@@ -116,6 +111,18 @@ Examples:
     
     args = parser.parse_args()
     
+    # Validate minimum values
+    if args.ports < 1:
+        parser.error("--ports must be >= 1")
+    if args.threads < 1:
+        parser.error("--threads must be >= 1")
+    if args.queues < 1:
+        parser.error("--queues must be >= 1")
+    if args.rx_queues is not None and args.rx_queues < 1:
+        parser.error("--rx-queues must be >= 1")
+    if args.tx_queues is not None and args.tx_queues < 1:
+        parser.error("--tx-queues must be >= 1")
+
     # Parse processor parameters into a dict
     processor_params = None
     if args.processor_param:

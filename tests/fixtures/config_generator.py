@@ -54,9 +54,9 @@ class TestConfigGenerator:
         Generate a test configuration with net_tap virtual PMD.
         
         Args:
-            num_ports: Number of virtual ports (1-2)
-            num_threads: Number of PMD threads (1-2)
-            num_queues: Default number of queues per port for both RX and TX (1-2)
+            num_ports: Number of virtual ports (>= 1)
+            num_threads: Number of PMD threads (>= 1)
+            num_queues: Default number of queues per port for both RX and TX (>= 1)
             num_rx_queues: Override RX queues per port (defaults to num_queues)
             num_tx_queues: Override TX queues per port (defaults to num_queues)
             use_hugepages: Whether to use hugepages (default: False)
@@ -75,15 +75,15 @@ class TestConfigGenerator:
         if num_tx_queues is None:
             num_tx_queues = num_queues
 
-        # Validate parameters (limited for VM resource constraints)
-        if not 1 <= num_ports <= 2:
-            raise ValueError("num_ports must be 1-2 (VM resource constraint)")
-        if not 1 <= num_threads <= 2:
-            raise ValueError("num_threads must be 1-2 (VM resource constraint)")
-        if not 1 <= num_rx_queues <= 2:
-            raise ValueError("num_rx_queues must be 1-2 (VM resource constraint)")
-        if not 1 <= num_tx_queues <= 2:
-            raise ValueError("num_tx_queues must be 1-2 (VM resource constraint)")
+        # Validate parameters (minimum 1, no upper limit)
+        if num_ports < 1:
+            raise ValueError("num_ports must be >= 1")
+        if num_threads < 1:
+            raise ValueError("num_threads must be >= 1")
+        if num_rx_queues < 1:
+            raise ValueError("num_rx_queues must be >= 1")
+        if num_tx_queues < 1:
+            raise ValueError("num_tx_queues must be >= 1")
         
         # Generate core mask (main lcore + worker lcores)
         core_mask = TestConfigGenerator.generate_core_mask(num_threads)
