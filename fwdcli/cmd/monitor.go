@@ -41,6 +41,8 @@ var monitorCmd = &cobra.Command{
 		ticker := time.NewTicker(time.Duration(monitorInterval) * time.Second)
 		defer ticker.Stop()
 
+		var prevStats *formatter.StatsResult
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -65,12 +67,13 @@ var monitorCmd = &cobra.Command{
 					}
 					fmt.Println(string(line))
 				} else {
-					output, err := formatter.FormatStatsMonitor(resp.Result, time.Now())
+					output, curStats, err := formatter.FormatStatsMonitorWithPPS(resp.Result, time.Now(), prevStats, monitorInterval)
 					if err != nil {
 						fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 						os.Exit(ExitServerError)
 					}
 					fmt.Print(output)
+					prevStats = curStats
 				}
 			}
 		}

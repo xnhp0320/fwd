@@ -59,6 +59,7 @@ class ListSlab {
   std::size_t free_count() const { return free_count_; }
   std::size_t used_count() const { return capacity_ - free_count_; }
   std::size_t capacity() const { return capacity_; }
+  const uint8_t* slab_base() const { return slab_; }
 
  private:
   using FreeList = boost::intrusive::slist<

@@ -83,6 +83,7 @@ class FiveTupleForwardingProcessor
   };
 
   static constexpr uint16_t kBatchSize = 32;
+  static constexpr std::size_t kGcBatchSize = 16;
   static constexpr std::size_t kDefaultCapacity = 65536;
   void RefreshGcScheduling();
   bool ShouldTriggerGc() const;
@@ -94,6 +95,7 @@ class FiveTupleForwardingProcessor
   processor::PmdJob flow_gc_job_;
   bool gc_job_registered_ = false;
   bool gc_job_scheduled_ = false;
+  uint16_t max_batch_count_ = 0;
   FlowTable table_;
   FlowTableInspectorImpl flow_table_inspector_;
 };

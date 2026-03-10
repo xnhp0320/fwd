@@ -5,7 +5,7 @@
 namespace processor {
 namespace {
 
-TEST(PmdJobRunnerTest, RegisterScheduleRunUnscheduleUnregister) {
+TEST(PmdJobRunnerTest, RegisterScheduleRunUnregister) {
   int calls = 0;
   PmdJob job([&calls](uint64_t) { ++calls; });
   PmdJobRunner runner;
@@ -21,17 +21,25 @@ TEST(PmdJobRunnerTest, RegisterScheduleRunUnscheduleUnregister) {
   EXPECT_EQ(runner.runner_size(), 1u);
   EXPECT_TRUE(runner.HasRunnableJobs());
 
+  // RunRunnableJobs executes the callback and auto-returns the job to pending.
   runner.RunRunnableJobs(100);
-  runner.RunRunnableJobs(200);
-  EXPECT_EQ(calls, 2);
-
-  EXPECT_TRUE(runner.Unschedule(&job));
+  EXPECT_EQ(calls, 1);
   EXPECT_EQ(job.state(), PmdJob::State::kPending);
   EXPECT_EQ(runner.pending_size(), 1u);
   EXPECT_EQ(runner.runner_size(), 0u);
+  EXPECT_FALSE(runner.HasRunnableJobs());
+
+  // Second RunRunnableJobs on empty runner list is a no-op.
+  runner.RunRunnableJobs(200);
+  EXPECT_EQ(calls, 1);
+
+  // Re-schedule succeeds since job is back in kPending after auto-return.
+  EXPECT_TRUE(runner.Schedule(&job));
+  EXPECT_EQ(job.state(), PmdJob::State::kRunner);
 
   runner.RunRunnableJobs(300);
   EXPECT_EQ(calls, 2);
+  EXPECT_EQ(job.state(), PmdJob::State::kPending);
 
   EXPECT_TRUE(runner.Unregister(&job));
   EXPECT_EQ(job.state(), PmdJob::State::kIdle);

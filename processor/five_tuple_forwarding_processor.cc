@@ -1,5 +1,6 @@
 #include "processor/five_tuple_forwarding_processor.h"
 
+#include <algorithm>
 #include <arpa/inet.h>
 #include <cstdlib>
 #include <exception>
@@ -83,7 +84,7 @@ absl::Status FiveTupleForwardingProcessor::check_impl(
 }
 
 void FiveTupleForwardingProcessor::process_impl() {
-  RefreshGcScheduling();
+  max_batch_count_ = 0;
 
   const auto& tx = config().tx_queues[0];
 
@@ -91,6 +92,11 @@ void FiveTupleForwardingProcessor::process_impl() {
     rxtx::Batch<kBatchSize> batch;
     batch.SetCount(rte_eth_rx_burst(rx.port_id, rx.queue_id, batch.Data(),
                                     batch.Capacity()));
+
+    // Note: some NIC PMD drivers with limited burst sizes (e.g., virtio, tap)
+    // may return fewer packets per burst even under load, which can cause false
+    // light-traffic classification.
+    max_batch_count_ = std::max(max_batch_count_, batch.Count());
 
     if (batch.Count() == 0) {
       batch.Release();
@@ -185,10 +191,15 @@ void FiveTupleForwardingProcessor::process_impl() {
     // Release ownership so the Batch destructor doesn't double-free.
     batch.Release();
   }
+
+  RefreshGcScheduling();
 }
 
 void FiveTupleForwardingProcessor::RefreshGcScheduling() {
   if (job_runner_ == nullptr || !gc_job_registered_) return;
+
+  // Sync with auto-return: if job was returned to pending, update our flag.
+  gc_job_scheduled_ = (flow_gc_job_.state() == PmdJob::State::kRunner);
 
   bool should_run = ShouldTriggerGc();
   if (should_run && !gc_job_scheduled_) {
@@ -201,14 +212,12 @@ void FiveTupleForwardingProcessor::RefreshGcScheduling() {
 }
 
 bool FiveTupleForwardingProcessor::ShouldTriggerGc() const {
-  // Placeholder policy. Real trigger conditions will consider traffic load and
-  // flow-table pressure.
-  return false;
+  return max_batch_count_ < kBatchSize / 2 &&
+         table_.size() >= table_.capacity() / 2;
 }
 
 void FiveTupleForwardingProcessor::RunFlowGc(uint64_t /*now_tsc*/) {
-  // Placeholder GC task. Concrete stale-entry cleanup will be implemented
-  // in follow-up changes.
+  table_.EvictLru(kGcBatchSize);
 }
 
 absl::Status FiveTupleForwardingProcessor::CheckParams(

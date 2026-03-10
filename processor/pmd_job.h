@@ -105,8 +105,16 @@ class PmdJobRunner {
   }
 
   void RunRunnableJobs(uint64_t now_tsc) {
+    // Execute all runner jobs.
     for (auto it = runner_jobs_.begin(); it != runner_jobs_.end(); ++it) {
       it->Run(now_tsc);
+    }
+    // Auto-return: move all executed jobs back to pending.
+    while (!runner_jobs_.empty()) {
+      PmdJob& job = runner_jobs_.front();
+      runner_jobs_.pop_front();
+      job.state_ = PmdJob::State::kPending;
+      pending_jobs_.push_back(job);
     }
   }
 

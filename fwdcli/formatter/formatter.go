@@ -230,6 +230,56 @@ func FormatStatsMonitor(result json.RawMessage, ts time.Time) (string, error) {
 	return b.String(), nil
 }
 
+// FormatStatsMonitorWithPPS renders stats with a PPS column computed from the delta
+// between the current and previous snapshots over the given interval (seconds).
+// Returns the formatted output and the parsed current stats for use as the next "prev".
+func FormatStatsMonitorWithPPS(result json.RawMessage, ts time.Time, prev *StatsResult, intervalSec int) (string, *StatsResult, error) {
+	var s StatsResult
+	if err := json.Unmarshal(result, &s); err != nil {
+		return "", nil, fmt.Errorf("failed to parse stats result: %w", err)
+	}
+
+	// Build per-lcore PPS map and total PPS
+	threadPPS := make(map[int]uint64)
+	var totalPPS uint64
+	if prev != nil && intervalSec > 0 {
+		prevByLcore := make(map[int]uint64)
+		for _, t := range prev.Threads {
+			prevByLcore[t.LcoreID] = t.Packets
+		}
+		for _, t := range s.Threads {
+			if prevPkts, ok := prevByLcore[t.LcoreID]; ok && t.Packets >= prevPkts {
+				threadPPS[t.LcoreID] = (t.Packets - prevPkts) / uint64(intervalSec)
+			}
+		}
+		if s.Total.Packets >= prev.Total.Packets {
+			totalPPS = (s.Total.Packets - prev.Total.Packets) / uint64(intervalSec)
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString("\033[2J\033[H")
+	fmt.Fprintf(&b, "Stats at %s\n\n", ts.Format(time.RFC3339))
+
+	fmt.Fprintf(&b, "%-10s %15s %15s %12s\n", "LCORE", "PACKETS", "BYTES", "PPS")
+	fmt.Fprintf(&b, "%-10s %15s %15s %12s\n", "-----", "-------", "-----", "---")
+	for _, th := range s.Threads {
+		ppsStr := "-"
+		if prev != nil {
+			ppsStr = fmt.Sprintf("%d", threadPPS[th.LcoreID])
+		}
+		fmt.Fprintf(&b, "%-10d %15d %15d %12s\n", th.LcoreID, th.Packets, th.Bytes, ppsStr)
+	}
+	fmt.Fprintf(&b, "%-10s %15s %15s %12s\n", "-----", "-------", "-----", "---")
+	totalPPSStr := "-"
+	if prev != nil {
+		totalPPSStr = fmt.Sprintf("%d", totalPPS)
+	}
+	fmt.Fprintf(&b, "%-10s %15d %15d %12s\n", "TOTAL", s.Total.Packets, s.Total.Bytes, totalPPSStr)
+
+	return b.String(), &s, nil
+}
+
 // FormatJSON pretty-prints raw JSON for --json mode.
 func FormatJSON(raw json.RawMessage) (string, error) {
 	pretty, err := json.MarshalIndent(raw, "", "  ")

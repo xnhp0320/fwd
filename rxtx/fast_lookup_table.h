@@ -5,9 +5,11 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 
 #include "absl/container/flat_hash_set.h"
 #include "absl/hash/hash.h"
+#include "boost/intrusive/list.hpp"
 
 #include "rxtx/allocator.h"
 #include "rxtx/list_slab.h"
@@ -15,6 +17,18 @@
 #include "rxtx/packet_metadata.h"
 
 namespace rxtx {
+
+// Node for the LRU doubly-linked list, stored in a parallel array indexed
+// by slab slot. Keeps LRU tracking out of the 64-byte LookupEntry layout.
+struct LruNode {
+  boost::intrusive::list_member_hook<> lru_hook;
+  std::size_t slot_index;  // index into slab backing array
+};
+
+using LruList = boost::intrusive::list<
+    LruNode,
+    boost::intrusive::member_hook<
+        LruNode, boost::intrusive::list_member_hook<>, &LruNode::lru_hook>>;
 
 // High-performance flow lookup table backed by absl::flat_hash_set
 // with pointer-based hashing into slab-allocated LookupEntry items.
@@ -49,12 +63,14 @@ class FastLookupTable {
                        uint8_t protocol, uint32_t vni, uint8_t flags);
 
   // Find a flow entry. Returns pointer if found, nullptr otherwise.
+  // Non-const because a hit promotes the entry in the LRU list.
   LookupEntry* Find(const IpAddress& src_ip, const IpAddress& dst_ip,
                      uint16_t src_port, uint16_t dst_port,
-                     uint8_t protocol, uint32_t vni, uint8_t flags) const;
+                     uint8_t protocol, uint32_t vni, uint8_t flags);
 
   // Convenience: find using PacketMetadata directly.
-  LookupEntry* Find(const PacketMetadata& meta) const;
+  // Non-const because a hit promotes the entry in the LRU list.
+  LookupEntry* Find(const PacketMetadata& meta);
 
   // Remove a flow entry by pointer. Returns true if removed.
   // Returns false without side effects if modifiable_ is false.
@@ -69,6 +85,10 @@ class FastLookupTable {
   template <typename Fn>
   std::size_t ForEach(Iterator& it, std::size_t count, Fn fn);
 
+  // Evict up to batch_size least-recently-used entries from the table.
+  // Returns the number of entries actually removed.
+  std::size_t EvictLru(std::size_t batch_size);
+
   std::size_t size() const { return set_.size(); }
   std::size_t capacity() const { return slab_.capacity(); }
 
@@ -78,16 +98,23 @@ class FastLookupTable {
                         uint16_t src_port, uint16_t dst_port,
                         uint8_t protocol, uint32_t vni, uint8_t flags);
 
+  std::size_t SlotIndex(const LookupEntry* entry) const {
+    return (reinterpret_cast<const uint8_t*>(entry) - slab_.slab_base())
+           / sizeof(LookupEntry);
+  }
+
   ListSlab<sizeof(LookupEntry), Allocator> slab_;
   Set set_;
   std::atomic<bool> modifiable_{true};
+  std::unique_ptr<LruNode[]> lru_nodes_;
+  LruList lru_list_;
 };
 
 // --- Implementation ---
 
 template <typename Allocator>
 FastLookupTable<Allocator>::FastLookupTable(std::size_t capacity)
-    : slab_(capacity) {}
+    : slab_(capacity), lru_nodes_(std::make_unique<LruNode[]>(capacity)) {}
 
 template <typename Allocator>
 void FastLookupTable<Allocator>::FillEntry(
@@ -107,23 +134,31 @@ template <typename Allocator>
 LookupEntry* FastLookupTable<Allocator>::Find(
     const IpAddress& src_ip, const IpAddress& dst_ip,
     uint16_t src_port, uint16_t dst_port,
-    uint8_t protocol, uint32_t vni, uint8_t flags) const {
+    uint8_t protocol, uint32_t vni, uint8_t flags) {
   LookupEntry probe{};
   FillEntry(&probe, src_ip, dst_ip, src_port, dst_port,
             protocol, vni, flags);
   auto it = set_.find(&probe);
   if (it == set_.end()) return nullptr;
-  return *it;
+  LookupEntry* entry = *it;
+  std::size_t slot = SlotIndex(entry);
+  lru_list_.splice(lru_list_.end(), lru_list_,
+                   lru_list_.iterator_to(lru_nodes_[slot]));
+  return entry;
 }
 
 template <typename Allocator>
 LookupEntry* FastLookupTable<Allocator>::Find(
-    const PacketMetadata& meta) const {
+    const PacketMetadata& meta) {
   LookupEntry probe{};
   probe.FromMetadata(meta);
   auto it = set_.find(&probe);
   if (it == set_.end()) return nullptr;
-  return *it;
+  LookupEntry* entry = *it;
+  std::size_t slot = SlotIndex(entry);
+  lru_list_.splice(lru_list_.end(), lru_list_,
+                   lru_list_.iterator_to(lru_nodes_[slot]));
+  return entry;
 }
 
 template <typename Allocator>
@@ -144,6 +179,9 @@ LookupEntry* FastLookupTable<Allocator>::Insert(
   FillEntry(entry, src_ip, dst_ip, src_port, dst_port,
             protocol, vni, flags);
   set_.insert(entry);
+  std::size_t slot = SlotIndex(entry);
+  lru_nodes_[slot].slot_index = slot;
+  lru_list_.push_back(lru_nodes_[slot]);
   return entry;
 }
 
@@ -153,6 +191,8 @@ bool FastLookupTable<Allocator>::Remove(LookupEntry* entry) {
 
   auto erased = set_.erase(entry);
   if (erased == 0) return false;
+  std::size_t slot = SlotIndex(entry);
+  lru_list_.erase(lru_list_.iterator_to(lru_nodes_[slot]));
   slab_.template Deallocate<LookupEntry>(entry);
   return true;
 }
@@ -170,11 +210,29 @@ std::size_t FastLookupTable<Allocator>::ForEach(
     ++it;
     if (fn(entry)) {
       set_.erase(current);
+      std::size_t slot = SlotIndex(entry);
+      lru_list_.erase(lru_list_.iterator_to(lru_nodes_[slot]));
       slab_.template Deallocate<LookupEntry>(entry);
     }
     ++visited;
   }
   return visited;
+}
+
+template <typename Allocator>
+std::size_t FastLookupTable<Allocator>::EvictLru(std::size_t batch_size) {
+  std::size_t removed = 0;
+  while (removed < batch_size && !lru_list_.empty()) {
+    LruNode& node = lru_list_.front();
+    lru_list_.pop_front();
+    LookupEntry* entry = reinterpret_cast<LookupEntry*>(
+        const_cast<uint8_t*>(slab_.slab_base()) +
+        node.slot_index * sizeof(LookupEntry));
+    set_.erase(entry);
+    slab_.template Deallocate<LookupEntry>(entry);
+    ++removed;
+  }
+  return removed;
 }
 
 }  // namespace rxtx
