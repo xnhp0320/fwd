@@ -377,6 +377,16 @@ absl::Status ConfigValidator::Validate(const DpdkConfig& config) {
       return absl::InvalidArgumentError(
           absl::StrCat("Port ", port.port_id, ": mbuf_size must be > 0"));
     }
+
+    // Validate rss mode
+    static const std::unordered_set<std::string> valid_rss_modes = {
+        "none", "ip", "tcp", "udp", "sctp", "l3", "l3l4"};
+    if (valid_rss_modes.find(port.rss) == valid_rss_modes.end()) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Port ", port.port_id, ": invalid rss mode '",
+                       port.rss,
+                       "' (valid: none, ip, tcp, udp, sctp, l3, l3l4)"));
+    }
   }
 
   return absl::OkStatus();

@@ -218,6 +218,16 @@ absl::StatusOr<DpdkConfig> ConfigParser::ParseString(
       }
       port_config.mbuf_size = port_json["mbuf_size"].get<uint16_t>();
       
+      // Parse rss (optional string, default "none")
+      if (port_json.contains("rss")) {
+        if (!port_json["rss"].is_string()) {
+          return absl::InvalidArgumentError(
+              absl::StrCat("Port ", port_config.port_id,
+                           ": field 'rss' must be a string"));
+        }
+        port_config.rss = port_json["rss"].get<std::string>();
+      }
+      
       // Add the parsed port configuration to the config
       config.ports.push_back(port_config);
     }

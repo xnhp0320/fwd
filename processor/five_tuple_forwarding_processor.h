@@ -62,6 +62,8 @@ class FiveTupleForwardingProcessor
   }
 
  private:
+  friend class FiveTupleForwardingProcessorTestAccess;
+
   using FlowTable = rxtx::FastLookupTable<>;
 
   class FlowTableInspectorImpl final : public processor::FlowTableInspector {

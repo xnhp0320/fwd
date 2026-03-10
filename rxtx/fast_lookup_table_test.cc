@@ -403,6 +403,233 @@ TEST(FastLookupTableTest, ForEachSelectiveRemoval) {
   EXPECT_EQ(table.size(), kN - remove_count);
 }
 
+// --- LRU unit tests ---
+
+// Property 4 invariant: Insert single entry → LRU list size equals 1.
+// We verify by evicting 1 entry and confirming the table becomes empty.
+TEST(FastLookupTableTest, InsertSingleEntryLruSizeEqualsOne) {
+  FastLookupTable<> table(8);
+  table.Insert(MakeIpv4(1), MakeIpv4(2), 100, 200, 6, 10, 0);
+  ASSERT_EQ(table.size(), 1u);
+
+  // Evict 1 from LRU — should remove exactly 1.
+  std::size_t removed = table.EvictLru(1);
+  EXPECT_EQ(removed, 1u);
+  EXPECT_EQ(table.size(), 0u);
+}
+
+// Property 4 invariant: Insert N entries → LRU list size equals N.
+TEST(FastLookupTableTest, InsertNEntriesLruSizeEqualsN) {
+  constexpr std::size_t kN = 5;
+  FastLookupTable<> table(16);
+  for (std::size_t i = 0; i < kN; ++i) {
+    auto* e = table.Insert(MakeIpv4(static_cast<uint32_t>(i + 1)),
+                           MakeIpv4(0xFF), 100, 200, 6, 10, 0);
+    ASSERT_NE(e, nullptr);
+  }
+  ASSERT_EQ(table.size(), kN);
+
+  // Evict all N — should remove exactly N.
+  std::size_t removed = table.EvictLru(kN);
+  EXPECT_EQ(removed, kN);
+  EXPECT_EQ(table.size(), 0u);
+}
+
+// Property 4: Remove entry → LRU list size decreases.
+TEST(FastLookupTableTest, RemoveEntryLruSizeDecreases) {
+  FastLookupTable<> table(8);
+  auto* e1 = table.Insert(MakeIpv4(1), MakeIpv4(2), 100, 200, 6, 10, 0);
+  auto* e2 = table.Insert(MakeIpv4(3), MakeIpv4(4), 300, 400, 17, 20, 0);
+  ASSERT_NE(e1, nullptr);
+  ASSERT_NE(e2, nullptr);
+  ASSERT_EQ(table.size(), 2u);
+
+  EXPECT_TRUE(table.Remove(e1));
+  EXPECT_EQ(table.size(), 1u);
+
+  // Evict 1 — should remove the remaining entry.
+  std::size_t removed = table.EvictLru(1);
+  EXPECT_EQ(removed, 1u);
+  EXPECT_EQ(table.size(), 0u);
+
+  // Evict again — nothing left.
+  removed = table.EvictLru(1);
+  EXPECT_EQ(removed, 0u);
+}
+
+// Property 5: Find hit promotes entry to LRU tail.
+// Insert A then B (LRU order: A, B). Find A → promotes A to tail (order: B, A).
+// Evict 1 from head → should remove B.
+TEST(FastLookupTableTest, FindHitPromotesToLruTail) {
+  FastLookupTable<> table(8);
+  auto* a = table.Insert(MakeIpv4(1), MakeIpv4(2), 100, 200, 6, 10, 0);
+  auto* b = table.Insert(MakeIpv4(3), MakeIpv4(4), 300, 400, 17, 20, 0);
+  ASSERT_NE(a, nullptr);
+  ASSERT_NE(b, nullptr);
+
+  // Find A → promotes A to tail. LRU order becomes: B (head), A (tail).
+  auto* found = table.Find(MakeIpv4(1), MakeIpv4(2), 100, 200, 6, 10, 0);
+  EXPECT_EQ(found, a);
+
+  // Evict 1 from head → should remove B (least recently used).
+  table.EvictLru(1);
+  EXPECT_EQ(table.size(), 1u);
+
+  // A should still be findable.
+  found = table.Find(MakeIpv4(1), MakeIpv4(2), 100, 200, 6, 10, 0);
+  EXPECT_EQ(found, a);
+
+  // B should be gone.
+  found = table.Find(MakeIpv4(3), MakeIpv4(4), 300, 400, 17, 20, 0);
+  EXPECT_EQ(found, nullptr);
+}
+
+// Property 6: Find miss does not modify LRU order.
+// Insert A then B (LRU order: A, B). Find non-existent → order unchanged.
+// Evict 1 → should remove A (head).
+TEST(FastLookupTableTest, FindMissDoesNotModifyLruOrder) {
+  FastLookupTable<> table(8);
+  auto* a = table.Insert(MakeIpv4(1), MakeIpv4(2), 100, 200, 6, 10, 0);
+  auto* b = table.Insert(MakeIpv4(3), MakeIpv4(4), 300, 400, 17, 20, 0);
+  ASSERT_NE(a, nullptr);
+  ASSERT_NE(b, nullptr);
+
+  // Miss — should not change LRU order.
+  auto* miss = table.Find(MakeIpv4(99), MakeIpv4(99), 999, 999, 6, 10, 0);
+  EXPECT_EQ(miss, nullptr);
+
+  // Evict 1 from head → should remove A (inserted first, still at head).
+  table.EvictLru(1);
+  EXPECT_EQ(table.size(), 1u);
+
+  // A should be gone, B should remain.
+  auto* found_a = table.Find(MakeIpv4(1), MakeIpv4(2), 100, 200, 6, 10, 0);
+  EXPECT_EQ(found_a, nullptr);
+  auto* found_b = table.Find(MakeIpv4(3), MakeIpv4(4), 300, 400, 17, 20, 0);
+  EXPECT_EQ(found_b, b);
+}
+
+// EvictLru(0) returns 0, table unchanged.
+TEST(FastLookupTableTest, EvictLruZeroBatchSizeReturnsZero) {
+  FastLookupTable<> table(8);
+  table.Insert(MakeIpv4(1), MakeIpv4(2), 100, 200, 6, 10, 0);
+  ASSERT_EQ(table.size(), 1u);
+
+  std::size_t removed = table.EvictLru(0);
+  EXPECT_EQ(removed, 0u);
+  EXPECT_EQ(table.size(), 1u);
+}
+
+// Property 8: EvictLru on empty table returns 0.
+TEST(FastLookupTableTest, EvictLruOnEmptyTableReturnsZero) {
+  FastLookupTable<> table(8);
+  ASSERT_EQ(table.size(), 0u);
+
+  std::size_t removed = table.EvictLru(10);
+  EXPECT_EQ(removed, 0u);
+  EXPECT_EQ(table.size(), 0u);
+}
+
+// Property 7: EvictLru(batch_size) removes from head in order.
+// Insert A, B, C in order. Evict 2 → removes A, B. C remains.
+TEST(FastLookupTableTest, EvictLruRemovesFromHeadInOrder) {
+  FastLookupTable<> table(8);
+  auto* a = table.Insert(MakeIpv4(1), MakeIpv4(2), 100, 200, 6, 10, 0);
+  auto* b = table.Insert(MakeIpv4(3), MakeIpv4(4), 300, 400, 17, 20, 0);
+  auto* c = table.Insert(MakeIpv4(5), MakeIpv4(6), 500, 600, 6, 30, 0);
+  ASSERT_NE(a, nullptr);
+  ASSERT_NE(b, nullptr);
+  ASSERT_NE(c, nullptr);
+  ASSERT_EQ(table.size(), 3u);
+
+  std::size_t removed = table.EvictLru(2);
+  EXPECT_EQ(removed, 2u);
+  EXPECT_EQ(table.size(), 1u);
+
+  // A and B (head entries) should be gone.
+  EXPECT_EQ(table.Find(MakeIpv4(1), MakeIpv4(2), 100, 200, 6, 10, 0), nullptr);
+  EXPECT_EQ(table.Find(MakeIpv4(3), MakeIpv4(4), 300, 400, 17, 20, 0), nullptr);
+
+  // C (tail) should remain.
+  auto* found_c = table.Find(MakeIpv4(5), MakeIpv4(6), 500, 600, 6, 30, 0);
+  EXPECT_EQ(found_c, c);
+}
+
+// Property 8: EvictLru when table has fewer entries than batch_size removes all.
+TEST(FastLookupTableTest, EvictLruFewerEntriesThanBatchSizeRemovesAll) {
+  FastLookupTable<> table(8);
+  table.Insert(MakeIpv4(1), MakeIpv4(2), 100, 200, 6, 10, 0);
+  table.Insert(MakeIpv4(3), MakeIpv4(4), 300, 400, 17, 20, 0);
+  ASSERT_EQ(table.size(), 2u);
+
+  std::size_t removed = table.EvictLru(100);
+  EXPECT_EQ(removed, 2u);
+  EXPECT_EQ(table.size(), 0u);
+}
+
+// Property 4: ForEach with removal correctly unlinks LruNodes.
+TEST(FastLookupTableTest, ForEachWithRemovalUnlinksLruNodes) {
+  constexpr std::size_t kN = 4;
+  FastLookupTable<> table(kN);
+  for (std::size_t i = 0; i < kN; ++i) {
+    auto* e = table.Insert(MakeIpv4(static_cast<uint32_t>(i + 1)),
+                           MakeIpv4(0xFF), 100, 200, 6, 10, 0);
+    ASSERT_NE(e, nullptr);
+  }
+  ASSERT_EQ(table.size(), kN);
+
+  // Remove entries with even src_ip via ForEach.
+  auto it = table.Begin();
+  table.ForEach(it, kN, [](LookupEntry* entry) {
+    return (entry->src_ip.v4 % 2 == 0);
+  });
+  // 2 even entries removed (src_ip 2, 4), 2 odd remain (src_ip 1, 3).
+  EXPECT_EQ(table.size(), 2u);
+
+  // LRU list should also have exactly 2 entries — evict all to verify.
+  std::size_t removed = table.EvictLru(100);
+  EXPECT_EQ(removed, 2u);
+  EXPECT_EQ(table.size(), 0u);
+}
+
+// Slot index computation: insert entries sequentially, verify eviction order
+// matches insertion order, confirming slot index tracking is correct.
+TEST(FastLookupTableTest, SlotIndexComputationMatchesPointerArithmetic) {
+  constexpr std::size_t kCapacity = 4;
+  FastLookupTable<> table(kCapacity);
+
+  for (std::size_t i = 0; i < kCapacity; ++i) {
+    auto* e = table.Insert(MakeIpv4(static_cast<uint32_t>(i + 1)),
+                           MakeIpv4(0xFF), 100, 200, 6, 10, 0);
+    ASSERT_NE(e, nullptr);
+  }
+
+  // Evict one at a time — each eviction should remove the oldest entry.
+  // This validates that slot_index correctly maps back to the right entry.
+  table.EvictLru(1);
+  EXPECT_EQ(table.size(), kCapacity - 1);
+  EXPECT_EQ(table.Find(MakeIpv4(1), MakeIpv4(0xFF), 100, 200, 6, 10, 0),
+            nullptr);
+
+  table.EvictLru(1);
+  EXPECT_EQ(table.size(), kCapacity - 2);
+  EXPECT_EQ(table.Find(MakeIpv4(2), MakeIpv4(0xFF), 100, 200, 6, 10, 0),
+            nullptr);
+
+  // Remaining entries should still be findable.
+  EXPECT_NE(table.Find(MakeIpv4(3), MakeIpv4(0xFF), 100, 200, 6, 10, 0),
+            nullptr);
+  EXPECT_NE(table.Find(MakeIpv4(4), MakeIpv4(0xFF), 100, 200, 6, 10, 0),
+            nullptr);
+}
+
+// Requirement 2.4: sizeof(LookupEntry) == 64 static assertion holds.
+TEST(FastLookupTableTest, LookupEntrySizeIs64Bytes) {
+  static_assert(sizeof(LookupEntry) == 64,
+                "LookupEntry must be exactly 64 bytes (one cache line)");
+  EXPECT_EQ(sizeof(LookupEntry), 64u);
+}
+
 }  // namespace
 }  // namespace rxtx
 

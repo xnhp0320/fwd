@@ -58,6 +58,17 @@ struct DpdkPortConfig {
   // Common values: 2048 (standard Ethernet), 9216 (jumbo frames)
   // Should be set to maximum expected packet size
   uint16_t mbuf_size;
+
+  // RSS (Receive Side Scaling) hash mode (optional, default "none")
+  // Supported values:
+  //   "none"  - RSS disabled (default)
+  //   "ip"    - Hash on IP src/dst (IPv4 + IPv6)
+  //   "tcp"   - Hash on IP + TCP src/dst ports
+  //   "udp"   - Hash on IP + UDP src/dst ports
+  //   "sctp"  - Hash on IP + SCTP src/dst ports
+  //   "l3"    - All L3 hashing (same as "ip")
+  //   "l3l4"  - All L3 + L4 hashing (IP + TCP + UDP + SCTP)
+  std::string rss = "none";
 };
 
 // Configuration structure for DPDK EAL initialization parameters.

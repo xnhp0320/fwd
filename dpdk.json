@@ -9,7 +9,8 @@
       "num_tx_queues": 4,
       "num_descriptors": 1024,
       "mbuf_pool_size": 8192,
-      "mbuf_size": 2048
+      "mbuf_size": 2048,
+      "rss": "l3l4"
     },
     {
       "port_id": 1,

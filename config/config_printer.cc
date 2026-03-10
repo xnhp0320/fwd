@@ -57,6 +57,11 @@ std::string ConfigPrinter::ToJson(const DpdkConfig& config, int indent) {
       port_json["mbuf_pool_size"] = port.mbuf_pool_size;
       port_json["mbuf_size"] = port.mbuf_size;
       
+      // Serialize rss (skip if "none" — that's the default)
+      if (port.rss != "none") {
+        port_json["rss"] = port.rss;
+      }
+      
       ports_array.push_back(port_json);
     }
     

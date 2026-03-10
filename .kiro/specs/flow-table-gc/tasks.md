@@ -17,7 +17,7 @@ Implement LRU-based flow table garbage collection in three layers: (1) PmdJobRun
     - Update the `RejectsInvalidTransitions` test if any assertions depend on jobs staying in `kRunner` after run
     - _Requirements: 1.1, 1.2, 1.3_
 
-  - [ ]* 1.3 Add new unit tests for auto-return edge cases in `processor/pmd_job_test.cc`
+  - [x] 1.3 Add new unit tests for auto-return edge cases in `processor/pmd_job_test.cc`
     - Test: `RunRunnableJobs()` on empty runner list is a no-op (pending jobs unaffected)
     - Test: Single job auto-return cycle — schedule, run, verify kPending, re-schedule succeeds
     - Test: Multiple jobs all return to pending after single `RunRunnableJobs()` call
@@ -55,7 +55,7 @@ Implement LRU-based flow table garbage collection in three layers: (1) PmdJobRun
     - Handle empty list (return 0) and `batch_size > table size` (remove all)
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7_
 
-  - [ ]* 3.5 Add LRU unit tests in `rxtx/fast_lookup_table_test.cc`
+  - [x] 3.5 Add LRU unit tests in `rxtx/fast_lookup_table_test.cc`
     - Test: Insert single entry → LRU list size equals 1 (Property 4 invariant)
     - Test: Insert N entries → LRU list size equals N
     - Test: Remove entry → LRU list size decreases (Property 4)
@@ -95,7 +95,7 @@ Implement LRU-based flow table garbage collection in three layers: (1) PmdJobRun
     - Replace placeholder with `table_.EvictLru(kGcBatchSize)`
     - _Requirements: 7.1, 7.3_
 
-  - [ ]* 5.5 Add GC scheduling unit tests in `processor/five_tuple_forwarding_processor_test.cc`
+  - [x] 5.5 Add GC scheduling unit tests in `processor/five_tuple_forwarding_processor_test.cc`
     - Test: `ShouldTriggerGc` returns true when `max_batch_count < kBatchSize / 2` AND `table.size() >= table.capacity() / 2` (Property 9)
     - Test: `ShouldTriggerGc` returns false when traffic is heavy (`max_batch_count >= kBatchSize / 2`)
     - Test: `ShouldTriggerGc` returns false when table is below 50% occupancy

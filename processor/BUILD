@@ -127,8 +127,10 @@ cc_test(
     srcs = ["five_tuple_forwarding_processor_test.cc"],
     deps = [
         ":five_tuple_forwarding_processor",
+        ":pmd_job",
         ":processor_registry",
         "//config:dpdk_config",
+        "//rxtx:fast_lookup_table",
         "//rxtx:packet_metadata_impl",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/status",

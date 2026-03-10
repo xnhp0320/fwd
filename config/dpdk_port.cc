@@ -8,6 +8,33 @@
 
 #include "absl/strings/str_cat.h"
 
+namespace {
+
+// Convert an RSS mode string to the corresponding DPDK ETH_RSS flags.
+// Returns 0 for "none" or unrecognized values.
+uint64_t RssModeToFlags(const std::string& rss_mode) {
+  if (rss_mode == "ip" || rss_mode == "l3") {
+    return RTE_ETH_RSS_IP;
+  }
+  if (rss_mode == "tcp") {
+    return RTE_ETH_RSS_IP | RTE_ETH_RSS_TCP;
+  }
+  if (rss_mode == "udp") {
+    return RTE_ETH_RSS_IP | RTE_ETH_RSS_UDP;
+  }
+  if (rss_mode == "sctp") {
+    return RTE_ETH_RSS_IP | RTE_ETH_RSS_SCTP;
+  }
+  if (rss_mode == "l3l4") {
+    return RTE_ETH_RSS_IP | RTE_ETH_RSS_TCP | RTE_ETH_RSS_UDP |
+           RTE_ETH_RSS_SCTP;
+  }
+  // "none" or anything else
+  return 0;
+}
+
+}  // namespace
+
 namespace dpdk_config {
 
 DpdkPort::DpdkPort(const DpdkPortConfig& config)
@@ -199,6 +226,20 @@ absl::Status DpdkPort::ConfigurePort() {
     // Jumbo frame support is now handled via MTU configuration
     // We'll set this after port configuration
     port_conf.rxmode.mtu = config_.mbuf_size - RTE_ETHER_HDR_LEN - RTE_ETHER_CRC_LEN;
+  }
+
+  // Configure RSS (Receive Side Scaling) if requested
+  uint64_t rss_hf = RssModeToFlags(config_.rss);
+  if (rss_hf != 0) {
+    // Intersect requested RSS flags with what the device actually supports
+    rss_hf &= dev_info.flow_type_rss_offloads;
+
+    if (rss_hf != 0) {
+      port_conf.rxmode.mq_mode = RTE_ETH_MQ_RX_RSS;
+      port_conf.rx_adv_conf.rss_conf.rss_hf = rss_hf;
+      port_conf.rx_adv_conf.rss_conf.rss_key = nullptr;  // use default key
+      port_conf.rx_adv_conf.rss_conf.rss_key_len = 0;
+    }
   }
 
   ret = rte_eth_promiscuous_enable(config_.port_id);
