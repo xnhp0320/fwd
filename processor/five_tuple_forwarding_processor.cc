@@ -363,7 +363,7 @@ void FiveTupleForwardingProcessor::RegisterControlCommands(
               nlohmann::json threads_array = nlohmann::json::array();
 
               for (const auto& info : *tables) {
-                size_t count;
+                size_t count = 0;
                 if (info.table != nullptr) {
                   count = info.table->size();
                 }
