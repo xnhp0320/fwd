@@ -62,8 +62,7 @@ FiveTupleForwardingProcessor::FiveTupleForwardingProcessor(
           return static_cast<std::size_t>(std::atol(it->second.c_str()));
         }
         return kDefaultCapacity;
-      }()),
-      flow_table_inspector_(&table_) {}
+      }()) {}
 
 FiveTupleForwardingProcessor::~FiveTupleForwardingProcessor() {
   if (job_runner_ != nullptr && gc_job_registered_) {
@@ -137,6 +136,7 @@ void FiveTupleForwardingProcessor::process_impl() {
             session::SessionKey::FromMetadata(meta, /*zone_id=*/0);
         session::SessionEntry* session = session_table_->Lookup(session_key);
         if (session == nullptr) {
+          proc_stats_.RecordSessionLookupMiss();
           session = session_table_->Insert(session_key);
         }
         if (session != nullptr) {
@@ -148,6 +148,7 @@ void FiveTupleForwardingProcessor::process_impl() {
 
       } else if (entry == nullptr) {
         // L1 miss — insert into FastLookupTable.
+        proc_stats_.RecordFlowTableMiss();
         entry = table_.Insert(meta.src_ip, meta.dst_ip, meta.src_port,
                               meta.dst_port, meta.protocol, meta.vni,
                               static_cast<uint8_t>(meta.flags & rxtx::kFlagIpv6));
@@ -250,36 +251,39 @@ void FiveTupleForwardingProcessor::RegisterControlCommands(
       "get_flow_table", "five_tuple_forwarding",
       [runtime](const nlohmann::json& /*params*/,
                 dpdk_config::CommandResultCallback done) mutable {
-        if (!runtime.get_lcore_ids || !runtime.get_flow_table_inspector ||
+        if (!runtime.get_lcore_ids || !runtime.get_processor_data ||
             !runtime.call_after_grace_period) {
           done(dpdk_config::CommandResult::Error("not_supported"));
           return;
         }
 
-        struct FlowTableInfo {
+        struct TableInfo {
           uint32_t lcore_id;
-          processor::FlowTableInspector* inspector;
+          rxtx::FastLookupTable<>* table;
         };
-        auto tables = std::make_shared<std::vector<FlowTableInfo>>();
+        auto tables = std::make_shared<std::vector<TableInfo>>();
 
         for (uint32_t lcore_id : runtime.get_lcore_ids()) {
-          auto* inspector = runtime.get_flow_table_inspector(lcore_id);
-          tables->push_back({lcore_id, inspector});
-          if (inspector != nullptr) {
-            inspector->SetModifiable(false);
+          auto* pmd = static_cast<PmdData*>(
+              runtime.get_processor_data(lcore_id));
+          rxtx::FastLookupTable<>* tbl = pmd ? pmd->table : nullptr;
+          tables->push_back({lcore_id, tbl});
+          if (tbl != nullptr) {
+            tbl->SetModifiable(false);
           }
         }
 
         auto restore_modifiable = [tables]() {
           for (const auto& info : *tables) {
-            if (info.inspector != nullptr) {
-              info.inspector->SetModifiable(true);
+            if (info.table != nullptr) {
+              info.table->SetModifiable(true);
             }
           }
         };
 
         auto shared_done =
-            std::make_shared<dpdk_config::CommandResultCallback>(std::move(done));
+            std::make_shared<dpdk_config::CommandResultCallback>(
+                std::move(done));
 
         auto status = runtime.call_after_grace_period(
             [tables, shared_done, restore_modifiable]() {
@@ -288,11 +292,11 @@ void FiveTupleForwardingProcessor::RegisterControlCommands(
               try {
                 for (const auto& info : *tables) {
                   nlohmann::json entries = nlohmann::json::array();
-                  if (info.inspector != nullptr) {
-                    info.inspector->ForEachEntry(
-                        [&entries](const rxtx::LookupEntry& entry) {
-                          entries.push_back(SerializeLookupEntry(entry));
-                        });
+                  if (info.table != nullptr) {
+                    for (auto it = info.table->Begin();
+                         it != info.table->End(); ++it) {
+                      entries.push_back(SerializeLookupEntry(**it));
+                    }
                   }
                   threads_array.push_back(
                       {{"lcore_id", info.lcore_id}, {"entries", entries}});
@@ -311,9 +315,43 @@ void FiveTupleForwardingProcessor::RegisterControlCommands(
 
         if (!status.ok()) {
           restore_modifiable();
-          (*shared_done)(
-              dpdk_config::CommandResult::Error("Failed to schedule grace period"));
+          (*shared_done)(dpdk_config::CommandResult::Error(
+              "Failed to schedule grace period"));
         }
+      });
+
+  registry.RegisterSyncCommand(
+      "get_proc_stats", "five_tuple_forwarding",
+      [runtime](const nlohmann::json& /*params*/)
+          -> dpdk_config::CommandResult {
+        if (!runtime.get_lcore_ids || !runtime.get_processor_data) {
+          return dpdk_config::CommandResult::Error("not_supported");
+        }
+
+        nlohmann::json threads_array = nlohmann::json::array();
+        uint64_t total_flow_misses = 0;
+        uint64_t total_session_misses = 0;
+
+        for (uint32_t lcore_id : runtime.get_lcore_ids()) {
+          auto* pmd = static_cast<PmdData*>(
+              runtime.get_processor_data(lcore_id));
+          uint64_t fm = 0;
+          uint64_t sm = 0;
+          if (pmd != nullptr && pmd->stats != nullptr) {
+            fm = pmd->stats->GetFlowTableMisses();
+            sm = pmd->stats->GetSessionLookupMisses();
+          }
+          threads_array.push_back({{"lcore_id", lcore_id},
+                                   {"flow_table_misses", fm},
+                                   {"session_lookup_misses", sm}});
+          total_flow_misses += fm;
+          total_session_misses += sm;
+        }
+
+        return dpdk_config::CommandResult::Success(
+            {{"threads", threads_array},
+             {"total", {{"flow_table_misses", total_flow_misses},
+                        {"session_lookup_misses", total_session_misses}}}});
       });
 }
 

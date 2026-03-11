@@ -194,21 +194,11 @@ absl::Status ControlPlane::RegisterProcessorCommands() {
     return thread_manager_ ? thread_manager_->GetLcoreIds()
                            : std::vector<uint32_t>{};
   };
-  runtime.get_flow_table_inspector = [this](uint32_t lcore_id) {
-    if (!thread_manager_) {
-      return static_cast<processor::FlowTableInspector*>(nullptr);
-    }
-    PmdThread* thread = thread_manager_->GetThread(lcore_id);
-    if (thread == nullptr) {
-      return static_cast<processor::FlowTableInspector*>(nullptr);
-    }
-    return thread->GetProcessorContext().flow_table_inspector;
-  };
-  runtime.get_proc_stats = [this](uint32_t lcore_id) -> void* {
+  runtime.get_processor_data = [this](uint32_t lcore_id) -> void* {
     if (!thread_manager_) return nullptr;
     PmdThread* thread = thread_manager_->GetThread(lcore_id);
     if (thread == nullptr) return nullptr;
-    return thread->GetProcessorContext().proc_stats;
+    return thread->GetProcessorContext().processor_data;
   };
   runtime.call_after_grace_period = [this](std::function<void()> cb) {
     if (!rcu_manager_) {

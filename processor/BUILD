@@ -22,7 +22,6 @@ cc_library(
     hdrs = ["processor_context.h"],
     deps = [
         ":packet_stats",
-        "//rxtx:lookup_entry",
     ],
 )
 

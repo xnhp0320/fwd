@@ -46,6 +46,12 @@ class FiveTupleForwardingProcessor
     }
   };
 
+  // Per-PMD opaque data exported to ProcessorContext for control-plane access.
+  struct PmdData {
+    rxtx::FastLookupTable<>* table;
+    ProcessorStats* stats;
+  };
+
   explicit FiveTupleForwardingProcessor(
       const dpdk_config::PmdThreadConfig& config,
       PacketStats* stats = nullptr);
@@ -72,11 +78,11 @@ class FiveTupleForwardingProcessor
   // Read-only access to the flow table capacity (for testing).
   std::size_t table_capacity() const { return table_.capacity(); }
 
-  // Export the flow table pointer into the processor context.
+  // Export processor-specific data into the context.
   // Also reads session_table from context (set by ControlPlane before launch).
   void ExportProcessorData(ProcessorContext& ctx) {
-    ctx.flow_table_inspector = &flow_table_inspector_;
-    ctx.proc_stats = &proc_stats_;
+    pmd_data_ = {&table_, &proc_stats_};
+    ctx.processor_data = &pmd_data_;
     if (ctx.session_table) {
       session_table_ = static_cast<session::SessionTable*>(ctx.session_table);
     }
@@ -90,24 +96,6 @@ class FiveTupleForwardingProcessor
   friend class FiveTupleForwardingProcessorTestAccess;
 
   using FlowTable = rxtx::FastLookupTable<>;
-
-  class FlowTableInspectorImpl final : public processor::FlowTableInspector {
-   public:
-    explicit FlowTableInspectorImpl(FlowTable* table) : table_(table) {}
-
-    void SetModifiable(bool modifiable) override {
-      table_->SetModifiable(modifiable);
-    }
-
-    void ForEachEntry(const EntryVisitor& visitor) const override {
-      for (auto it = table_->Begin(); it != table_->End(); ++it) {
-        visitor(**it);
-      }
-    }
-
-   private:
-    FlowTable* table_;  // Not owned
-  };
 
   static constexpr uint16_t kBatchSize = 32;
   static constexpr std::size_t kGcBatchSize = 16;
@@ -125,7 +113,7 @@ class FiveTupleForwardingProcessor
   bool gc_job_scheduled_ = false;
   uint16_t max_batch_count_ = 0;
   FlowTable table_;
-  FlowTableInspectorImpl flow_table_inspector_;
+  PmdData pmd_data_{};
 };
 
 }  // namespace processor
