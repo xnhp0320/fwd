@@ -211,6 +211,74 @@ func FormatProcStats(result json.RawMessage) (string, error) {
 	return b.String(), nil
 }
 
+// SessionsCountResult maps the get_sessions_count command result.
+type SessionsCountResult struct {
+	Count int `json:"count"`
+}
+
+// FlowsCountThread represents flow entry count for a single PMD thread.
+type FlowsCountThread struct {
+	LcoreID int `json:"lcore_id"`
+	Count   int `json:"count"`
+}
+
+// FlowsCountResult maps the get_flow_table_count command result.
+type FlowsCountResult struct {
+	Threads []FlowsCountThread `json:"threads"`
+}
+
+// FormatSessionsCount renders only the session count from get_sessions_count.
+func FormatSessionsCount(result json.RawMessage) (string, error) {
+	var s SessionsCountResult
+	if err := json.Unmarshal(result, &s); err != nil {
+		return "", fmt.Errorf("failed to parse sessions count result: %w", err)
+	}
+	return fmt.Sprintf("Sessions: %d\n", s.Count), nil
+}
+
+// FormatFlowsCount renders only the per-thread and total flow entry counts from get_flow_table_count.
+func FormatFlowsCount(result json.RawMessage) (string, error) {
+	var f FlowsCountResult
+	if err := json.Unmarshal(result, &f); err != nil {
+		return "", fmt.Errorf("failed to parse flow table count result: %w", err)
+	}
+
+	var b strings.Builder
+	total := 0
+	for _, t := range f.Threads {
+		fmt.Fprintf(&b, "Lcore %d: %d entries\n", t.LcoreID, t.Count)
+		total += t.Count
+	}
+	fmt.Fprintf(&b, "Total: %d entries\n", total)
+	return b.String(), nil
+}
+
+// FormatSessionsBrief renders only the session count.
+func FormatSessionsBrief(result json.RawMessage) (string, error) {
+	var s SessionsResult
+	if err := json.Unmarshal(result, &s); err != nil {
+		return "", fmt.Errorf("failed to parse sessions result: %w", err)
+	}
+	return fmt.Sprintf("Sessions: %d\n", len(s.Sessions)), nil
+}
+
+// FormatFlowsBrief renders only the per-thread and total flow entry counts.
+func FormatFlowsBrief(result json.RawMessage) (string, error) {
+	var f FlowsResult
+	if err := json.Unmarshal(result, &f); err != nil {
+		return "", fmt.Errorf("failed to parse flow table result: %w", err)
+	}
+
+	var b strings.Builder
+	total := 0
+	for _, t := range f.Threads {
+		fmt.Fprintf(&b, "Lcore %d: %d entries\n", t.LcoreID, len(t.Entries))
+		total += len(t.Entries)
+	}
+	fmt.Fprintf(&b, "Total: %d entries\n", total)
+	return b.String(), nil
+}
+
 // FormatFlows renders a get_flow_table response as a human-readable table grouped by thread.
 func FormatFlows(result json.RawMessage) (string, error) {
 	var f FlowsResult

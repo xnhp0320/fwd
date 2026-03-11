@@ -320,6 +320,69 @@ void FiveTupleForwardingProcessor::RegisterControlCommands(
         }
       });
 
+  registry.RegisterAsyncCommand(
+      "get_flow_table_count", "five_tuple_forwarding",
+      [runtime](const nlohmann::json& /*params*/,
+                dpdk_config::CommandResultCallback done) mutable {
+        if (!runtime.get_lcore_ids || !runtime.get_processor_data ||
+            !runtime.call_after_grace_period) {
+          done(dpdk_config::CommandResult::Error("not_supported"));
+          return;
+        }
+
+        struct TableInfo {
+          uint32_t lcore_id;
+          rxtx::FastLookupTable<>* table;
+        };
+        auto tables = std::make_shared<std::vector<TableInfo>>();
+
+        for (uint32_t lcore_id : runtime.get_lcore_ids()) {
+          auto* pmd = static_cast<PmdData*>(
+              runtime.get_processor_data(lcore_id));
+          rxtx::FastLookupTable<>* tbl = pmd ? pmd->table : nullptr;
+          tables->push_back({lcore_id, tbl});
+          if (tbl != nullptr) {
+            tbl->SetModifiable(false);
+          }
+        }
+
+        auto restore_modifiable = [tables]() {
+          for (const auto& info : *tables) {
+            if (info.table != nullptr) {
+              info.table->SetModifiable(true);
+            }
+          }
+        };
+
+        auto shared_done =
+            std::make_shared<dpdk_config::CommandResultCallback>(
+                std::move(done));
+
+        auto status = runtime.call_after_grace_period(
+            [tables, shared_done, restore_modifiable]() {
+              nlohmann::json threads_array = nlohmann::json::array();
+
+              for (const auto& info : *tables) {
+                size_t count;
+                if (info.table != nullptr) {
+                  count = info.table->size();
+                }
+                threads_array.push_back(
+                    {{"lcore_id", info.lcore_id}, {"count", count}});
+              }
+
+              restore_modifiable();
+              (*shared_done)(dpdk_config::CommandResult::Success(
+                  {{"threads", threads_array}}));
+            });
+
+        if (!status.ok()) {
+          restore_modifiable();
+          (*shared_done)(dpdk_config::CommandResult::Error(
+              "Failed to schedule grace period"));
+        }
+      });
+
   registry.RegisterSyncCommand(
       "get_proc_stats", "five_tuple_forwarding",
       [runtime](const nlohmann::json& /*params*/)

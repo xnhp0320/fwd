@@ -21,7 +21,12 @@ var sessionsCmd = &cobra.Command{
 		}
 		defer c.Close()
 
-		resp, err := c.Send("get_sessions")
+		command := "get_sessions"
+		if briefOutput {
+			command = "get_sessions_count"
+		}
+
+		resp, err := c.Send(command)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(ExitConnError)
@@ -35,6 +40,8 @@ var sessionsCmd = &cobra.Command{
 		var output string
 		if jsonOutput {
 			output, err = formatter.FormatJSON(resp.Result)
+		} else if briefOutput {
+			output, err = formatter.FormatSessionsCount(resp.Result)
 		} else {
 			output, err = formatter.FormatSessions(resp.Result)
 		}

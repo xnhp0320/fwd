@@ -21,7 +21,12 @@ var flowsCmd = &cobra.Command{
 		}
 		defer c.Close()
 
-		resp, err := c.Send("get_flow_table")
+		command := "get_flow_table"
+		if briefOutput {
+			command = "get_flow_table_count"
+		}
+
+		resp, err := c.Send(command)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(ExitConnError)
@@ -35,6 +40,8 @@ var flowsCmd = &cobra.Command{
 		var output string
 		if jsonOutput {
 			output, err = formatter.FormatJSON(resp.Result)
+		} else if briefOutput {
+			output, err = formatter.FormatFlowsCount(resp.Result)
 		} else {
 			output, err = formatter.FormatFlows(resp.Result)
 		}

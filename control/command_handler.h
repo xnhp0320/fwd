@@ -76,6 +76,7 @@ class CommandHandler : public CommandRegistry {
   CommandResponse HandleGetStats(const nlohmann::json& params);
   CommandResponse HandleListCommands(const nlohmann::json& params);
   CommandResponse HandleGetSessions(const nlohmann::json& params);
+  CommandResponse HandleGetSessionsCount(const nlohmann::json& params);
 
   absl::flat_hash_map<std::string, CommandEntry> commands_;
   PMDThreadManager* thread_manager_;  // Not owned

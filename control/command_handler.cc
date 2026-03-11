@@ -167,6 +167,8 @@ void CommandHandler::SetSessionTable(session::SessionTable* session_table) {
   if (session_table_ != nullptr) {
     RegisterSyncCommand("get_sessions", "session",
                         [this](const json& params) { return HandleGetSessions(params); });
+    RegisterSyncCommand("get_sessions_count", "session",
+                        [this](const json& params) { return HandleGetSessionsCount(params); });
   }
 }
 
@@ -294,6 +296,19 @@ CommandHandler::CommandResponse CommandHandler::HandleGetSessions(
   }
 
   response.result = {{"sessions", sessions_array}};
+  return response;
+}
+
+CommandHandler::CommandResponse CommandHandler::HandleGetSessionsCount(
+    const nlohmann::json& /*params*/) {
+  CommandResponse response = CommandResponse::Success(json::object());
+  
+  size_t count = 0;
+  if (session_table_ != nullptr) {
+      count = session_table_->Count();
+  }
+
+  response.result = {{"count", count}};
   return response;
 }
 
