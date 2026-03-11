@@ -29,6 +29,7 @@ struct ProcessorContext {
   PacketStats* stats = nullptr;
   FlowTableInspector* flow_table_inspector = nullptr;  // nullptr if unsupported
   void* session_table = nullptr;   // SessionTable* (or nullptr if disabled)
+  void* proc_stats = nullptr;      // Processor-specific stats (or nullptr)
   PmdJobRunner* pmd_job_runner = nullptr;  // nullptr if not configured
 };
 

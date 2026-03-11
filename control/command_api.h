@@ -55,6 +55,7 @@ class CommandRegistry {
 struct ProcessorCommandRuntime {
   std::function<std::vector<uint32_t>()> get_lcore_ids;
   std::function<processor::FlowTableInspector*(uint32_t)> get_flow_table_inspector;
+  std::function<void*(uint32_t)> get_proc_stats;
   std::function<absl::Status(std::function<void()>)> call_after_grace_period;
 };
 

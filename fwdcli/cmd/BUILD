@@ -6,6 +6,7 @@ go_library(
         "commands.go",
         "flows.go",
         "monitor.go",
+        "proc_stats.go",
         "root.go",
         "sessions.go",
         "show.go",

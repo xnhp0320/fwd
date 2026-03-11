@@ -174,6 +174,43 @@ func FormatSessions(result json.RawMessage) (string, error) {
 	}
 	return b.String(), nil
 }
+// ProcThreadStats represents per-thread processor miss statistics.
+type ProcThreadStats struct {
+	LcoreID              int    `json:"lcore_id"`
+	FlowTableMisses      uint64 `json:"flow_table_misses"`
+	SessionLookupMisses  uint64 `json:"session_lookup_misses"`
+}
+
+// ProcTotalStats represents aggregate processor miss statistics.
+type ProcTotalStats struct {
+	FlowTableMisses     uint64 `json:"flow_table_misses"`
+	SessionLookupMisses uint64 `json:"session_lookup_misses"`
+}
+
+// ProcStatsResult maps the get_proc_stats command result.
+type ProcStatsResult struct {
+	Threads []ProcThreadStats `json:"threads"`
+	Total   ProcTotalStats    `json:"total"`
+}
+
+// FormatProcStats renders a get_proc_stats response as a tabular string.
+func FormatProcStats(result json.RawMessage) (string, error) {
+	var s ProcStatsResult
+	if err := json.Unmarshal(result, &s); err != nil {
+		return "", fmt.Errorf("failed to parse proc_stats result: %w", err)
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%-10s %20s %24s\n", "LCORE", "FLOW_TABLE_MISSES", "SESSION_LOOKUP_MISSES")
+	fmt.Fprintf(&b, "%-10s %20s %24s\n", "-----", "-----------------", "---------------------")
+	for _, th := range s.Threads {
+		fmt.Fprintf(&b, "%-10d %20d %24d\n", th.LcoreID, th.FlowTableMisses, th.SessionLookupMisses)
+	}
+	fmt.Fprintf(&b, "%-10s %20s %24s\n", "-----", "-----------------", "---------------------")
+	fmt.Fprintf(&b, "%-10s %20d %24d\n", "TOTAL", s.Total.FlowTableMisses, s.Total.SessionLookupMisses)
+	return b.String(), nil
+}
+
 // FormatFlows renders a get_flow_table response as a human-readable table grouped by thread.
 func FormatFlows(result json.RawMessage) (string, error) {
 	var f FlowsResult

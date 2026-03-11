@@ -204,6 +204,12 @@ absl::Status ControlPlane::RegisterProcessorCommands() {
     }
     return thread->GetProcessorContext().flow_table_inspector;
   };
+  runtime.get_proc_stats = [this](uint32_t lcore_id) -> void* {
+    if (!thread_manager_) return nullptr;
+    PmdThread* thread = thread_manager_->GetThread(lcore_id);
+    if (thread == nullptr) return nullptr;
+    return thread->GetProcessorContext().proc_stats;
+  };
   runtime.call_after_grace_period = [this](std::function<void()> cb) {
     if (!rcu_manager_) {
       return absl::FailedPreconditionError("RCU manager is not initialized");

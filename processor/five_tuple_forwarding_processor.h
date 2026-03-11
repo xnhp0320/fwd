@@ -22,6 +22,30 @@ namespace processor {
 class FiveTupleForwardingProcessor
     : public PacketProcessorBase<FiveTupleForwardingProcessor> {
  public:
+  // Per-processor stats for flow-table and session-lookup misses.
+  // Single-writer (PMD thread), multi-reader (control plane) via relaxed atomics.
+  struct ProcessorStats {
+    std::atomic<uint64_t> flow_table_misses{0};
+    std::atomic<uint64_t> session_lookup_misses{0};
+
+    void RecordFlowTableMiss() {
+      flow_table_misses.store(
+          flow_table_misses.load(std::memory_order_relaxed) + 1,
+          std::memory_order_relaxed);
+    }
+    void RecordSessionLookupMiss() {
+      session_lookup_misses.store(
+          session_lookup_misses.load(std::memory_order_relaxed) + 1,
+          std::memory_order_relaxed);
+    }
+    uint64_t GetFlowTableMisses() const {
+      return flow_table_misses.load(std::memory_order_relaxed);
+    }
+    uint64_t GetSessionLookupMisses() const {
+      return session_lookup_misses.load(std::memory_order_relaxed);
+    }
+  };
+
   explicit FiveTupleForwardingProcessor(
       const dpdk_config::PmdThreadConfig& config,
       PacketStats* stats = nullptr);
@@ -52,6 +76,7 @@ class FiveTupleForwardingProcessor
   // Also reads session_table from context (set by ControlPlane before launch).
   void ExportProcessorData(ProcessorContext& ctx) {
     ctx.flow_table_inspector = &flow_table_inspector_;
+    ctx.proc_stats = &proc_stats_;
     if (ctx.session_table) {
       session_table_ = static_cast<session::SessionTable*>(ctx.session_table);
     }
@@ -92,6 +117,7 @@ class FiveTupleForwardingProcessor
   void RunFlowGc(uint64_t now_tsc);
 
   PacketStats* stats_ = nullptr;
+  ProcessorStats proc_stats_;
   session::SessionTable* session_table_ = nullptr;
   processor::PmdJobRunner* job_runner_ = nullptr;
   processor::PmdJob flow_gc_job_;
