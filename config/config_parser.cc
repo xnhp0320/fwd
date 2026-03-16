@@ -397,6 +397,14 @@ absl::StatusOr<DpdkConfig> ConfigParser::ParseString(
     config.session_capacity = j["session_capacity"].get<uint32_t>();
   }
 
+  // Parse fib_file (optional string)
+  if (j.contains("fib_file")) {
+    if (!j["fib_file"].is_string()) {
+      return absl::InvalidArgumentError("Field 'fib_file' must be a string");
+    }
+    config.fib_file = j["fib_file"].get<std::string>();
+  }
+
   // Parse explicit additional_params field (array of [key, value] pairs)
   if (j.contains("additional_params") && j["additional_params"].is_array()) {
     for (const auto& param : j["additional_params"]) {
@@ -413,7 +421,7 @@ absl::StatusOr<DpdkConfig> ConfigParser::ParseString(
   const std::set<std::string> known_fields = {
       "core_mask", "memory_channels", "pci_allowlist",
       "pci_blocklist", "log_level", "huge_pages", "ports", "pmd_threads",
-      "session_capacity", "additional_params"
+      "session_capacity", "fib_file", "additional_params"
   };
 
   for (auto it = j.begin(); it != j.end(); ++it) {

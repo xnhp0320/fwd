@@ -3,8 +3,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <rte_lcore.h>
+#include <rte_lpm.h>
 
 #include <chrono>
+#include <cstring>
 #include <future>
 #include <iostream>
 #include <unordered_set>
@@ -12,6 +14,7 @@
 #include "absl/strings/str_cat.h"
 #include "config/pmd_thread_manager.h"
 #include "control/command_handler.h"
+#include "fib/fib_loader.h"
 #include "control/signal_handler.h"
 #include "control/unix_socket_server.h"
 #include "processor/processor_registry.h"
@@ -103,6 +106,37 @@ absl::Status ControlPlane::Initialize(const Config& config) {
         if (thread) {
           thread->GetMutableProcessorContext().session_table =
               session_table_.get();
+        }
+      }
+    }
+  }
+
+  // Create LPM table if fib_file is configured.
+  if (!config_.fib_file.empty()) {
+    struct rte_lpm_config lpm_conf;
+    memset(&lpm_conf, 0, sizeof(lpm_conf));
+    lpm_conf.max_rules = 1048576;    // 1M rules
+    lpm_conf.number_tbl8s = 65536;   // 64K tbl8s for 1M prefixes
+    lpm_conf.flags = 0;
+
+    lpm_table_ = rte_lpm_create("fib_lpm", SOCKET_ID_ANY, &lpm_conf);
+    if (lpm_table_ == nullptr) {
+      return absl::InternalError("rte_lpm_create failed");
+    }
+
+    auto status = fib::LoadFibFile(config_.fib_file, lpm_table_);
+    if (!status.ok()) {
+      rte_lpm_free(lpm_table_);
+      lpm_table_ = nullptr;
+      return status;
+    }
+
+    // Wire LPM table into each PMD thread's ProcessorContext.
+    if (thread_manager_) {
+      for (uint32_t lcore_id : thread_manager_->GetLcoreIds()) {
+        PmdThread* thread = thread_manager_->GetThread(lcore_id);
+        if (thread) {
+          thread->GetMutableProcessorContext().lpm_table = lpm_table_;
         }
       }
     }
@@ -292,6 +326,12 @@ void ControlPlane::Shutdown() {
         std::cout << "All PMD threads stopped\n";
       }
     }
+  }
+
+  // Destroy LPM table after PMD threads stop.
+  if (lpm_table_ != nullptr) {
+    rte_lpm_free(lpm_table_);
+    lpm_table_ = nullptr;
   }
 
   // Destroy SessionTable after PMD threads stop (they hold SessionEntry

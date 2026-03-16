@@ -64,6 +64,7 @@ cc_library(
         ":signal_handler",
         ":unix_socket_server",
         "//config:pmd_thread_manager",
+        "//fib:fib_loader",
         "//processor:processor_registry",
         "//rcu:rcu_manager",
         "//session:session_table",

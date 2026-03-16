@@ -109,6 +109,9 @@ struct DpdkConfig {
   // Maximum number of concurrent sessions. 0 = session tracking disabled.
   uint32_t session_capacity = 0;
 
+  // Path to FIB file. Empty = no FIB.
+  std::string fib_file;
+
   // Additional EAL parameters as key-value pairs for extensibility
   // Allows passing arbitrary parameters not explicitly defined above
   std::vector<std::pair<std::string, std::string>> additional_params;

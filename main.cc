@@ -85,6 +85,7 @@ int main(int argc, char **argv) {
     dpdk_config::ControlPlane::Config control_config;
     control_config.socket_path = socket_path;
     control_config.session_capacity = config_or->session_capacity;
+    control_config.fib_file = config_or->fib_file;
     
     auto init_status = control_plane.Initialize(control_config);
     if (!init_status.ok()) {

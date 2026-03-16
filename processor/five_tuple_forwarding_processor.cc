@@ -103,13 +103,12 @@ void FiveTupleForwardingProcessor::process_impl() {
     }
 
     // Parse each packet and perform two-tier flow-table / session lookup.
-    for (uint16_t i = 0; i < batch.Count(); ++i) {
-      rxtx::Packet& pkt = rxtx::Packet::from(batch.Data()[i]);
+    batch.PrefetchForEach<3>([&](rxtx::Packet& pkt) {
       rxtx::PacketMetadata meta{};
       auto result = rxtx::PacketMetadata::Parse(pkt, meta);
       if (result != rxtx::ParseResult::kOk) {
         // Parse failed — skip lookup but still forward the packet.
-        continue;
+        return;
       }
 
       rxtx::LookupEntry* entry = table_.Find(meta);
@@ -124,7 +123,7 @@ void FiveTupleForwardingProcessor::process_impl() {
           if (entry->cached_version == current_ver) {
             // Fast path: session valid, update timestamp.
             se->timestamp.store(rte_rdtsc(), std::memory_order_relaxed);
-            continue;
+            return;
           }
           // Version mismatch: invalidate cached pointer.
           entry->session = nullptr;
@@ -170,7 +169,7 @@ void FiveTupleForwardingProcessor::process_impl() {
       }
       // If entry != nullptr && session_table_ == nullptr: L1 hit, no session
       // ops — backward compatible behavior.
-    }
+    });
 
     // Record per-thread stats before transmitting.
     if (stats_) {
