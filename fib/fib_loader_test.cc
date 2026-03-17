@@ -17,10 +17,19 @@ void TestCase(const std::string& name, bool condition) {
 int main() {
   std::cout << "Running FibLoader tests...\n\n";
 
-  // Stub returns OkStatus for any input, including nullptr.
+  // nullptr lpm pointer should return InvalidArgumentError.
   {
     auto status = fib::LoadFibFile("any_path", nullptr);
-    TestCase("LoadFibFile with nullptr returns OkStatus", status.ok());
+    TestCase("LoadFibFile with nullptr returns error", !status.ok());
+  }
+
+  // Non-existent file should return NotFoundError.
+  {
+    // Pass a non-null but invalid pointer — LoadFibFile will fail on
+    // file open before touching the lpm pointer.
+    struct rte_lpm* fake = reinterpret_cast<struct rte_lpm*>(0x1);
+    auto status = fib::LoadFibFile("/nonexistent/path.txt", fake);
+    TestCase("LoadFibFile with bad path returns error", !status.ok());
   }
 
   std::cout << "\n";

@@ -24,6 +24,7 @@ cc_binary(
         "//config:pmd_thread_manager",
         "//control:control_plane",
         "//processor:five_tuple_forwarding_processor",
+        "//processor:lpm_forwarding_processor",
         "//processor:simple_forwarding_processor",
         "//rcu:rcu_manager",
         "@abseil-cpp//absl/flags:flag",
