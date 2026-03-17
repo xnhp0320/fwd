@@ -15,6 +15,7 @@ struct ProcessorContext {
   void* session_table = nullptr;      // SessionTable* (or nullptr if disabled)
   void* processor_data = nullptr;     // Processor-specific opaque data (or nullptr)
   void* lpm_table = nullptr;          // rte_lpm* (or nullptr if no FIB)
+  void* tbm_table = nullptr;          // FibTbm* (or nullptr if no TBM FIB)
   PmdJobRunner* pmd_job_runner = nullptr;  // nullptr if not configured
 };
 

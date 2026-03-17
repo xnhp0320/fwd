@@ -68,6 +68,7 @@ cc_library(
         "//processor:processor_registry",
         "//rcu:rcu_manager",
         "//session:session_table",
+        "//tbm:tbmlib",
         "//:dpdk_lib",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/strings",

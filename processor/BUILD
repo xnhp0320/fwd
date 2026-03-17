@@ -134,6 +134,33 @@ cc_library(
     ],
 )
 
+# TBM forwarding processor: parses packets, performs tbm_lookup for IPv4
+# destination addresses, and forwards all packets to TX queue 0.
+# alwayslink ensures the static REGISTER_PROCESSOR initializer is not
+# stripped by the linker when this library is a transitive dependency.
+cc_library(
+    name = "tbm_forwarding_processor",
+    srcs = ["tbm_forwarding_processor.cc"],
+    hdrs = ["tbm_forwarding_processor.h"],
+    alwayslink = True,
+    deps = [
+        ":packet_processor_base",
+        ":packet_stats",
+        ":processor_context",
+        ":processor_registry",
+        "//config:dpdk_config",
+        "//rxtx:batch",
+        "//rxtx:packet",
+        "//rxtx:packet_metadata",
+        "//rxtx:packet_metadata_impl",
+        "//tbm:tbmlib",
+        "//:dpdk_lib",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/strings",
+    ],
+)
+
 # Five-tuple forwarding processor unit tests
 cc_test(
     name = "pmd_job_test",
@@ -157,6 +184,23 @@ cc_test(
         "//config:dpdk_config",
         "//rxtx:fast_lookup_table",
         "//rxtx:packet_metadata_impl",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/status",
+    ],
+)
+
+# TBM forwarding processor unit tests
+cc_test(
+    name = "tbm_forwarding_processor_test",
+    size = "small",
+    srcs = ["tbm_forwarding_processor_test.cc"],
+    deps = [
+        ":lpm_forwarding_processor",
+        ":tbm_forwarding_processor",
+        ":processor_context",
+        ":processor_registry",
+        "//config:dpdk_config",
+        "//tbm:tbmlib",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/status",
     ],

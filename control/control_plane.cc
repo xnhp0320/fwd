@@ -146,6 +146,31 @@ absl::Status ControlPlane::Initialize(const Config& config) {
     }
   }
 
+  // Create TBM table if fib_file is configured.
+  if (!config_.fib_file.empty()) {
+    tbm_table_ = {};  // Zero-init before tbm_init
+    tbm_init(&tbm_table_, 1048576);  // Match LPM max_rules capacity
+    tbm_initialized_ = true;
+
+    auto status = fib::LoadFibFileToTbm(config_.fib_file, &tbm_table_,
+                                         &tbm_rules_loaded_);
+    if (!status.ok()) {
+      tbm_free(&tbm_table_);
+      tbm_initialized_ = false;
+      return status;
+    }
+
+    // Wire TBM table into each PMD thread's ProcessorContext.
+    if (thread_manager_) {
+      for (uint32_t lcore_id : thread_manager_->GetLcoreIds()) {
+        PmdThread* thread = thread_manager_->GetThread(lcore_id);
+        if (thread) {
+          thread->GetMutableProcessorContext().tbm_table = &tbm_table_;
+        }
+      }
+    }
+  }
+
   // Initialize CommandHandler with shutdown callback
   command_handler_ = std::make_unique<CommandHandler>(
       thread_manager_,
@@ -345,6 +370,12 @@ void ControlPlane::Shutdown() {
   if (lpm_table_ != nullptr) {
     rte_lpm_free(lpm_table_);
     lpm_table_ = nullptr;
+  }
+
+  // Destroy TBM table after PMD threads stop.
+  if (tbm_initialized_) {
+    tbm_free(&tbm_table_);
+    tbm_initialized_ = false;
   }
 
   // Destroy SessionTable after PMD threads stop (they hold SessionEntry

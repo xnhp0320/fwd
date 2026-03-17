@@ -60,6 +60,9 @@ class ControlPlane {
   uint32_t lpm_max_rules_ = 0;
   uint32_t lpm_number_tbl8s_ = 0;
   uint32_t lpm_rules_loaded_ = 0;
+  FibTbm tbm_table_{};
+  bool tbm_initialized_ = false;
+  uint32_t tbm_rules_loaded_ = 0;
   bool processor_commands_registered_ = false;
   bool shutdown_initiated_ = false;
 };

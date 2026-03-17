@@ -26,6 +26,7 @@ cc_binary(
         "//processor:five_tuple_forwarding_processor",
         "//processor:lpm_forwarding_processor",
         "//processor:simple_forwarding_processor",
+        "//processor:tbm_forwarding_processor",
         "//rcu:rcu_manager",
         "@abseil-cpp//absl/flags:flag",
         "@abseil-cpp//absl/flags:parse",

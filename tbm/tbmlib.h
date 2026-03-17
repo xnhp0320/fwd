@@ -10,6 +10,8 @@ typedef struct { void* ptr; size_t len; } c3slice_t;
 typedef struct { void* ptr; c3typeid_t type; } c3any_t;
 
 #endif
+#ifndef TBMLIB_H_
+#define TBMLIB_H_
 
 /* TYPES */
 typedef struct tbmlib_cidr__Cidr$uint$__ tbmlib_cidr__Cidr$uint$;
@@ -45,3 +47,4 @@ extern c3fault_t tbm_remove(FibTbm* self, FibCidr prefix);
 extern void tbm_free(FibTbm* self);
 extern void tbm_iterate(FibTbm* self, TbmIterateFunc f, void* aux);
 extern c3fault_t tbm_lookup(uint32_t* return_ref, FibTbm* self, uint32_t v);
+#endif
