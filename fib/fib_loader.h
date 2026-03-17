@@ -9,10 +9,9 @@ struct rte_lpm;
 namespace fib {
 
 // Load FIB entries from file into the LPM table.
-// Current implementation is a stub that returns OkStatus without
-// inserting any prefixes. Future implementation will parse the file
-// and call rte_lpm_add for each prefix entry.
-absl::Status LoadFibFile(const std::string& file_path, struct rte_lpm* lpm);
+// If rules_loaded is non-null, stores the number of prefixes inserted.
+absl::Status LoadFibFile(const std::string& file_path, struct rte_lpm* lpm,
+                         uint32_t* rules_loaded = nullptr);
 
 }  // namespace fib
 

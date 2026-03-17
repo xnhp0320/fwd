@@ -51,6 +51,14 @@ class CommandHandler : public CommandRegistry {
   // Set the session table for get_sessions command.
   void SetSessionTable(session::SessionTable* session_table);
 
+  // Set FIB metadata for get_fib_info command.
+  struct FibInfo {
+    uint32_t rules_count = 0;
+    uint32_t max_rules = 0;
+    uint32_t number_tbl8s = 0;
+  };
+  void SetFibInfo(const FibInfo& fib_info);
+
  private:
   struct CommandRequest {
     std::string command;
@@ -77,10 +85,12 @@ class CommandHandler : public CommandRegistry {
   CommandResponse HandleListCommands(const nlohmann::json& params);
   CommandResponse HandleGetSessions(const nlohmann::json& params);
   CommandResponse HandleGetSessionsCount(const nlohmann::json& params);
+  CommandResponse HandleGetFibInfo(const nlohmann::json& params);
 
   absl::flat_hash_map<std::string, CommandEntry> commands_;
   PMDThreadManager* thread_manager_;  // Not owned
   session::SessionTable* session_table_ = nullptr;  // Not owned
+  FibInfo fib_info_;
   std::function<void()> shutdown_callback_;
 };
 

@@ -124,7 +124,11 @@ absl::Status ControlPlane::Initialize(const Config& config) {
       return absl::InternalError("rte_lpm_create failed");
     }
 
-    auto status = fib::LoadFibFile(config_.fib_file, lpm_table_);
+    lpm_max_rules_ = lpm_conf.max_rules;
+    lpm_number_tbl8s_ = lpm_conf.number_tbl8s;
+
+    auto status = fib::LoadFibFile(config_.fib_file, lpm_table_,
+                                   &lpm_rules_loaded_);
     if (!status.ok()) {
       rte_lpm_free(lpm_table_);
       lpm_table_ = nullptr;
@@ -150,6 +154,15 @@ absl::Status ControlPlane::Initialize(const Config& config) {
   // Wire session table into the command handler for get_sessions command.
   if (session_table_) {
     command_handler_->SetSessionTable(session_table_.get());
+  }
+
+  // Wire FIB info into the command handler for get_fib_info command.
+  {
+    CommandHandler::FibInfo fi;
+    fi.rules_count = lpm_rules_loaded_;
+    fi.max_rules = lpm_max_rules_;
+    fi.number_tbl8s = lpm_number_tbl8s_;
+    command_handler_->SetFibInfo(fi);
   }
 
   // Initialize UnixSocketServer

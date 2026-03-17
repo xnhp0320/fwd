@@ -167,6 +167,10 @@ class ControlClient:
         """Send get_sessions command and return parsed response."""
         return self.send_command("get_sessions")
 
+    def get_fib_info(self) -> Dict[str, Any]:
+        """Send get_fib_info command and return parsed response."""
+        return self.send_command("get_fib_info")
+
 
 
     

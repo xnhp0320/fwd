@@ -57,6 +57,9 @@ class ControlPlane {
   std::unique_ptr<CommandHandler> command_handler_;
   std::unique_ptr<session::SessionTable> session_table_;
   struct rte_lpm* lpm_table_ = nullptr;
+  uint32_t lpm_max_rules_ = 0;
+  uint32_t lpm_number_tbl8s_ = 0;
+  uint32_t lpm_rules_loaded_ = 0;
   bool processor_commands_registered_ = false;
   bool shutdown_initiated_ = false;
 };

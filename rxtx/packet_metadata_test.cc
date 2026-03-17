@@ -506,7 +506,7 @@ RC_GTEST_FIXTURE_PROP(PacketMetadataTest, NonFirstFragmentPortZeroingIpv4,
   // Non-first fragment: ports and l4_len must be zeroed.
   RC_ASSERT(meta.src_port == 0);
   RC_ASSERT(meta.dst_port == 0);
-  RC_ASSERT(pkt.Mbuf()->l4_len == 0);
+  RC_ASSERT(pkt.Mbuf()->l4_len == (unsigned char)0);
 }
 
 // Feature: parser-and-test-builder-enhancement, Property 2: Non-first fragment port zeroing (IPv6)
@@ -536,7 +536,7 @@ RC_GTEST_FIXTURE_PROP(PacketMetadataTest, NonFirstFragmentPortZeroingIpv6,
   // Non-first fragment: ports and l4_len must be zeroed.
   RC_ASSERT(meta.src_port == 0);
   RC_ASSERT(meta.dst_port == 0);
-  RC_ASSERT(pkt.Mbuf()->l4_len == 0);
+  RC_ASSERT(pkt.Mbuf()->l4_len == (unsigned char)0);
 }
 
 // Feature: parser-and-test-builder-enhancement, Property 2: Non-first fragment port zeroing (first/unfragmented)
@@ -569,7 +569,7 @@ RC_GTEST_FIXTURE_PROP(PacketMetadataTest, FirstFragmentAndUnfragmentedPortsNorma
   // First fragment or unfragmented: ports must match builder values, l4_len > 0.
   RC_ASSERT(meta.src_port == src_port);
   RC_ASSERT(meta.dst_port == dst_port);
-  RC_ASSERT(pkt.Mbuf()->l4_len > 0);
+  RC_ASSERT(pkt.Mbuf()->l4_len > (unsigned char)0);
 }
 
 // Feature: parser-and-test-builder-enhancement, Property 3: IPv4 options flag and L4 offset correctness
@@ -633,7 +633,7 @@ RC_GTEST_FIXTURE_PROP(PacketMetadataTest, Ipv6ExtHeaderChainWalking,
 
   for (int i = 0; i < num_ext_hdrs; ++i) {
     // Randomly choose Routing (43) or Destination Options (60).
-    auto ext_type = *rc::gen::element<uint8_t>(43, 60);
+    auto ext_type = *rc::gen::element<uint8_t>((uint8_t)43, (uint8_t)60);
     builder.AddIpv6ExtHdr(ext_type, 0);  // len_units=0 → 8 bytes each
   }
 
@@ -666,14 +666,14 @@ RC_GTEST_FIXTURE_PROP(PacketMetadataTest, Ipv6ExtHeaderAhEspTermination,
   // Generate 0–2 generic extension headers before the terminal AH/ESP.
   auto num_ext_hdrs = *rc::gen::inRange(0, 3);
   // Terminal protocol: AH (51) or ESP (50).
-  auto terminal_proto = *rc::gen::element<uint8_t>(51, 50);
+  auto terminal_proto = *rc::gen::element<uint8_t>((uint8_t)51, (uint8_t)50);
 
   auto builder = TestPacketBuilder(alloc_)
       .SetSrcPort(9999)
       .SetDstPort(8888);
 
   for (int i = 0; i < num_ext_hdrs; ++i) {
-    auto ext_type = *rc::gen::element<uint8_t>(43, 60);
+    auto ext_type = *rc::gen::element<uint8_t>((uint8_t)43, (uint8_t)60);
     builder.AddIpv6ExtHdr(ext_type, 0);
   }
 
@@ -693,7 +693,7 @@ RC_GTEST_FIXTURE_PROP(PacketMetadataTest, Ipv6ExtHeaderAhEspTermination,
   RC_ASSERT(meta.src_port == 0);
   RC_ASSERT(meta.dst_port == 0);
   // l4_len must be zero for AH/ESP.
-  RC_ASSERT(pkt.Mbuf()->l4_len == 0);
+  RC_ASSERT(pkt.Mbuf()->l4_len == (uint8_t)0);
   // l3_len = 40 + num_ext_hdrs * 8.
   RC_ASSERT(pkt.Mbuf()->l3_len == static_cast<uint16_t>(40 + num_ext_hdrs * 8));
   // If any ext headers were present, the flag should be set.
@@ -752,17 +752,17 @@ RC_GTEST_FIXTURE_PROP(PacketMetadataTest, VlanMetadataExtraction, ()) {
     RC_ASSERT(meta.vlan_count == 0);
     RC_ASSERT(meta.outer_vlan_id == 0);
     RC_ASSERT(meta.inner_vlan_id == 0);
-    RC_ASSERT(pkt.Mbuf()->l2_len == 14);
+    RC_ASSERT(pkt.Mbuf()->l2_len == (uint8_t)14);
   } else if (vlan_mode == 1) {
     RC_ASSERT(meta.vlan_count == 1);
     RC_ASSERT(meta.outer_vlan_id == static_cast<uint16_t>(outer_vid));
     RC_ASSERT(meta.inner_vlan_id == 0);
-    RC_ASSERT(pkt.Mbuf()->l2_len == 18);
+    RC_ASSERT(pkt.Mbuf()->l2_len == (uint8_t)18);
   } else {
     RC_ASSERT(meta.vlan_count == 2);
     RC_ASSERT(meta.outer_vlan_id == static_cast<uint16_t>(outer_vid));
     RC_ASSERT(meta.inner_vlan_id == static_cast<uint16_t>(inner_vid));
-    RC_ASSERT(pkt.Mbuf()->l2_len == 22);
+    RC_ASSERT(pkt.Mbuf()->l2_len == (uint8_t)22);
   }
 }
 
@@ -837,7 +837,7 @@ RC_GTEST_FIXTURE_PROP(PacketMetadataTest, IcmpFieldExtraction, ()) {
     RC_ASSERT(meta.src_port == 0);
   }
 
-  RC_ASSERT(pkt.Mbuf()->l4_len == 8);
+  RC_ASSERT(pkt.Mbuf()->l4_len == (uint8_t)8);
 }
 
 // Test 2 — IPv6 ICMPv6
@@ -868,7 +868,7 @@ RC_GTEST_FIXTURE_PROP(PacketMetadataTest, Icmpv6FieldExtraction, ()) {
     RC_ASSERT(meta.src_port == 0);
   }
 
-  RC_ASSERT(pkt.Mbuf()->l4_len == 8);
+  RC_ASSERT(pkt.Mbuf()->l4_len == (uint8_t)8);
   RC_ASSERT(meta.IsIpv6());
 }
 

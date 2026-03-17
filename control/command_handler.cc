@@ -172,6 +172,12 @@ void CommandHandler::SetSessionTable(session::SessionTable* session_table) {
   }
 }
 
+void CommandHandler::SetFibInfo(const FibInfo& fib_info) {
+  fib_info_ = fib_info;
+  RegisterSyncCommand("get_fib_info", "fib",
+                      [this](const json& params) { return HandleGetFibInfo(params); });
+}
+
 CommandHandler::CommandResponse CommandHandler::HandleShutdown(
     const nlohmann::json& /*params*/) {
   CommandResponse response = CommandResponse::Success(json::object());
@@ -309,6 +315,28 @@ CommandHandler::CommandResponse CommandHandler::HandleGetSessionsCount(
   }
 
   response.result = {{"count", count}};
+  return response;
+}
+
+CommandHandler::CommandResponse CommandHandler::HandleGetFibInfo(
+    const nlohmann::json& /*params*/) {
+  CommandResponse response = CommandResponse::Success(json::object());
+
+  // tbl24 is always 2^24 entries × 4 bytes = 64 MiB.
+  // tbl8 groups: number_tbl8s × 256 entries × 4 bytes each.
+  // rule_info: max_rules × 8 bytes (struct rte_lpm_rule stores ip + next_hop).
+  uint64_t tbl24_bytes = (1u << 24) * 4u;
+  uint64_t tbl8_bytes =
+      static_cast<uint64_t>(fib_info_.number_tbl8s) * 256u * 4u;
+  uint64_t rules_bytes = static_cast<uint64_t>(fib_info_.max_rules) * 8u;
+  uint64_t total_bytes = tbl24_bytes + tbl8_bytes + rules_bytes;
+
+  response.result = {
+      {"rules_count", fib_info_.rules_count},
+      {"max_rules", fib_info_.max_rules},
+      {"number_tbl8s", fib_info_.number_tbl8s},
+      {"memory_bytes", total_bytes},
+  };
   return response;
 }
 

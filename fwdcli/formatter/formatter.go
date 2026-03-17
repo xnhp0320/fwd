@@ -385,6 +385,49 @@ func FormatStatsMonitorWithPPS(result json.RawMessage, ts time.Time, prev *Stats
 	return b.String(), &s, nil
 }
 
+// FibInfoResult maps the get_fib_info command result.
+type FibInfoResult struct {
+	RulesCount  uint64 `json:"rules_count"`
+	MaxRules    uint64 `json:"max_rules"`
+	NumberTbl8s uint64 `json:"number_tbl8s"`
+	MemoryBytes uint64 `json:"memory_bytes"`
+}
+
+// FormatFibInfo renders a get_fib_info response as a human-readable string.
+func FormatFibInfo(result json.RawMessage) (string, error) {
+	var f FibInfoResult
+	if err := json.Unmarshal(result, &f); err != nil {
+		return "", fmt.Errorf("failed to parse fib_info result: %w", err)
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "FIB Information:\n")
+	fmt.Fprintf(&b, "  Rules loaded:   %d\n", f.RulesCount)
+	fmt.Fprintf(&b, "  Max rules:      %d\n", f.MaxRules)
+	fmt.Fprintf(&b, "  Number tbl8s:   %d\n", f.NumberTbl8s)
+	fmt.Fprintf(&b, "  Memory usage:   %s\n", formatBytes(f.MemoryBytes))
+	return b.String(), nil
+}
+
+// formatBytes converts a byte count to a human-readable string.
+func formatBytes(bytes uint64) string {
+	const (
+		kib = 1024
+		mib = 1024 * kib
+		gib = 1024 * mib
+	)
+	switch {
+	case bytes >= gib:
+		return fmt.Sprintf("%.2f GiB", float64(bytes)/float64(gib))
+	case bytes >= mib:
+		return fmt.Sprintf("%.2f MiB", float64(bytes)/float64(mib))
+	case bytes >= kib:
+		return fmt.Sprintf("%.2f KiB", float64(bytes)/float64(kib))
+	default:
+		return fmt.Sprintf("%d B", bytes)
+	}
+}
+
 // FormatJSON pretty-prints raw JSON for --json mode.
 func FormatJSON(raw json.RawMessage) (string, error) {
 	pretty, err := json.MarshalIndent(raw, "", "  ")

@@ -13,7 +13,8 @@
 
 namespace fib {
 
-absl::Status LoadFibFile(const std::string& file_path, struct rte_lpm* lpm) {
+absl::Status LoadFibFile(const std::string& file_path, struct rte_lpm* lpm,
+                         uint32_t* rules_loaded) {
   if (lpm == nullptr) {
     return absl::InvalidArgumentError("lpm pointer is null");
   }
@@ -77,6 +78,9 @@ absl::Status LoadFibFile(const std::string& file_path, struct rte_lpm* lpm) {
 
   std::cout << "FIB loaded: " << count << " prefixes from " << file_path
             << "\n";
+  if (rules_loaded != nullptr) {
+    *rules_loaded = count;
+  }
   return absl::OkStatus();
 }
 
