@@ -104,6 +104,21 @@ Examples:
     )
     
     parser.add_argument(
+        "--fib-file",
+        type=str,
+        default=None,
+        help="Path to FIB file (e.g., fib/ipv4_fib_large.txt)"
+    )
+    
+    parser.add_argument(
+        "--fib-algorithm",
+        type=str,
+        default="lpm",
+        choices=["lpm", "tbm"],
+        help="FIB lookup algorithm: lpm (rte_lpm) or tbm (tree bitmap) (default: lpm)"
+    )
+    
+    parser.add_argument(
         "-o", "--output",
         default="dpdk.json",
         help="Output file path (default: dpdk.json)"
@@ -145,7 +160,9 @@ Examples:
             use_hugepages=args.hugepages,
             processor_name=args.processor,
             processor_params=processor_params,
-            session_capacity=args.session_capacity
+            session_capacity=args.session_capacity,
+            fib_file=args.fib_file,
+            fib_algorithm=args.fib_algorithm
         )
         
         # Write to file
@@ -164,6 +181,9 @@ Examples:
             print(f"  Processor: {args.processor}")
         if processor_params:
             print(f"  Processor params: {processor_params}")
+        if args.fib_file:
+            print(f"  FIB file: {args.fib_file}")
+            print(f"  FIB algorithm: {args.fib_algorithm}")
         
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)

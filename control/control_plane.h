@@ -29,6 +29,7 @@ class ControlPlane {
     uint32_t shutdown_timeout_seconds = 10;
     uint32_t session_capacity = 0;
     std::string fib_file;
+    std::string fib_algorithm = "lpm";
   };
 
   explicit ControlPlane(PMDThreadManager* thread_manager);

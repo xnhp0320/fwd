@@ -58,8 +58,9 @@ def fib_test_config(test_output_dir, request):
         num_tx_queues=LPM_CONFIG["num_tx_queues"],
         use_hugepages=False,
         processor_name=LPM_CONFIG["processor_name"],
+        fib_file=str(FIB_FILE),
+        fib_algorithm="lpm",
     )
-    config["fib_file"] = str(FIB_FILE)
     config["additional_params"].append(["-m", "512"])
 
     config_path = test_output_dir / f"dpdk_fib_{request.node.name}.json"

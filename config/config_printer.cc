@@ -44,6 +44,11 @@ std::string ConfigPrinter::ToJson(const DpdkConfig& config, int indent) {
     j["session_capacity"] = config.session_capacity;
   }
 
+  // Serialize fib_file (only if non-empty, includes algorithm suffix)
+  if (!config.fib_file.empty()) {
+    j["fib_file"] = config.fib_file + ", " + config.fib_algorithm;
+  }
+
   // Serialize ports (array of port configurations)
   if (!config.ports.empty()) {
     json ports_array = json::array();

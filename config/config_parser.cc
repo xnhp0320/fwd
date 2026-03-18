@@ -397,12 +397,38 @@ absl::StatusOr<DpdkConfig> ConfigParser::ParseString(
     config.session_capacity = j["session_capacity"].get<uint32_t>();
   }
 
-  // Parse fib_file (optional string)
+  // Parse fib_file (optional string).
+  // Format: "path/to/fib.txt" or "path/to/fib.txt, lpm" or "path/to/fib.txt, tbm"
+  // The algorithm suffix is optional; defaults to "lpm".
   if (j.contains("fib_file")) {
     if (!j["fib_file"].is_string()) {
       return absl::InvalidArgumentError("Field 'fib_file' must be a string");
     }
-    config.fib_file = j["fib_file"].get<std::string>();
+    std::string raw = j["fib_file"].get<std::string>();
+    // Find the last comma to split path and algorithm.
+    auto comma_pos = raw.rfind(',');
+    if (comma_pos != std::string::npos) {
+      config.fib_file = raw.substr(0, comma_pos);
+      // Trim leading/trailing whitespace from both parts.
+      while (!config.fib_file.empty() && config.fib_file.back() == ' ')
+        config.fib_file.pop_back();
+      std::string algo = raw.substr(comma_pos + 1);
+      // Trim whitespace.
+      size_t start = algo.find_first_not_of(' ');
+      size_t end = algo.find_last_not_of(' ');
+      if (start != std::string::npos) {
+        algo = algo.substr(start, end - start + 1);
+      }
+      if (algo != "lpm" && algo != "tbm") {
+        return absl::InvalidArgumentError(
+            absl::StrCat("Invalid fib_file algorithm '", algo,
+                         "'; must be 'lpm' or 'tbm'"));
+      }
+      config.fib_algorithm = algo;
+    } else {
+      config.fib_file = raw;
+      config.fib_algorithm = "lpm";  // default
+    }
   }
 
   // Parse explicit additional_params field (array of [key, value] pairs)

@@ -112,6 +112,10 @@ struct DpdkConfig {
   // Path to FIB file. Empty = no FIB.
   std::string fib_file;
 
+  // FIB algorithm: "lpm" (rte_lpm) or "tbm" (tree bitmap). Default: "lpm".
+  // Parsed from fib_file value, e.g. "path/to/fib.txt, tbm".
+  std::string fib_algorithm = "lpm";
+
   // Additional EAL parameters as key-value pairs for extensibility
   // Allows passing arbitrary parameters not explicitly defined above
   std::vector<std::pair<std::string, std::string>> additional_params;

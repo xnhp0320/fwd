@@ -86,6 +86,7 @@ int main(int argc, char **argv) {
     control_config.socket_path = socket_path;
     control_config.session_capacity = config_or->session_capacity;
     control_config.fib_file = config_or->fib_file;
+    control_config.fib_algorithm = config_or->fib_algorithm;
     
     auto init_status = control_plane.Initialize(control_config);
     if (!init_status.ok()) {

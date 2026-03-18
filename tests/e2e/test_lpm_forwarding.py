@@ -83,8 +83,9 @@ def lpm_test_config(test_output_dir, request):
         num_tx_queues=LPM_CONFIG["num_tx_queues"],
         use_hugepages=False,
         processor_name=LPM_CONFIG["processor_name"],
+        fib_file=str(FIB_FILE),
+        fib_algorithm="lpm",
     )
-    config["fib_file"] = str(FIB_FILE)
 
     # rte_lpm_create needs ~68MB+ for 1M rules; --no-huge defaults to 64MB.
     # Bump to 512MB so the LPM table fits in non-hugepage memory.

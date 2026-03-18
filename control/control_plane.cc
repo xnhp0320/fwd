@@ -111,8 +111,8 @@ absl::Status ControlPlane::Initialize(const Config& config) {
     }
   }
 
-  // Create LPM table if fib_file is configured.
-  if (!config_.fib_file.empty()) {
+  // Create LPM table if fib_file is configured with lpm algorithm.
+  if (!config_.fib_file.empty() && config_.fib_algorithm == "lpm") {
     struct rte_lpm_config lpm_conf;
     memset(&lpm_conf, 0, sizeof(lpm_conf));
     lpm_conf.max_rules = 1048576;    // 1M rules
@@ -146,8 +146,8 @@ absl::Status ControlPlane::Initialize(const Config& config) {
     }
   }
 
-  // Create TBM table if fib_file is configured.
-  if (!config_.fib_file.empty()) {
+  // Create TBM table if fib_file is configured with tbm algorithm.
+  if (!config_.fib_file.empty() && config_.fib_algorithm == "tbm") {
     tbm_table_ = {};  // Zero-init before tbm_init
     tbm_init(&tbm_table_, 1048576);  // Match LPM max_rules capacity
     tbm_initialized_ = true;

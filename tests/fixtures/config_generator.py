@@ -48,7 +48,9 @@ class TestConfigGenerator:
         use_hugepages: bool = False,
         processor_name: str = None,
         processor_params: Dict[str, str] = None,
-        session_capacity: int = 0
+        session_capacity: int = 0,
+        fib_file: str = None,
+        fib_algorithm: str = "lpm"
     ) -> Dict[str, Any]:
         """
         Generate a test configuration with net_tap virtual PMD.
@@ -63,6 +65,8 @@ class TestConfigGenerator:
             processor_name: Optional processor name to include in each pmd_threads entry
             processor_params: Optional dict of processor parameters to include in each pmd_threads entry
             session_capacity: Session table capacity (0 = disabled, omitted from config)
+            fib_file: Optional path to FIB file
+            fib_algorithm: FIB algorithm: "lpm" or "tbm" (default: "lpm")
         
         Returns:
             Dictionary representing dpdk.json configuration
@@ -140,6 +144,9 @@ class TestConfigGenerator:
 
         if session_capacity > 0:
             config["session_capacity"] = session_capacity
+
+        if fib_file is not None:
+            config["fib_file"] = f"{fib_file}, {fib_algorithm}"
         
         return config
     
