@@ -202,3 +202,70 @@ cc_test(
         "-latomic",
     ],
 )
+
+cc_library(
+    name = "f14_simd",
+    hdrs = ["f14_simd.h"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "f14_map",
+    hdrs = ["f14_map.h"],
+    deps = ["//rxtx:f14_simd"],
+    visibility = ["//visibility:public"],
+)
+
+cc_test(
+    name = "f14_map_test",
+    size = "small",
+    srcs = ["f14_map_test.cc"],
+    deps = [
+        "//rxtx:f14_map",
+        "@googletest//:gtest_main",
+        "@rapidcheck",
+        "@rapidcheck//:rapidcheck_gtest",
+    ],
+)
+
+cc_library(
+    name = "f14_lookup_table",
+    hdrs = ["f14_lookup_table.h"],
+    deps = [
+        "//rxtx:f14_map",
+        "//rxtx:list_slab",
+        "//rxtx:lookup_entry",
+        "//rxtx:allocator",
+        "//rxtx:packet_metadata",
+        "@boost.intrusive",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_test(
+    name = "f14_lookup_table_test",
+    size = "small",
+    srcs = ["f14_lookup_table_test.cc"],
+    deps = [
+        "//rxtx:f14_lookup_table",
+        "//rxtx:f14_map",
+        "//rxtx:fast_lookup_table",
+        "//rxtx:lookup_entry",
+        "//rxtx:packet_metadata",
+        "@googletest//:gtest_main",
+        "@rapidcheck",
+        "@rapidcheck//:rapidcheck_gtest",
+    ],
+)
+
+cc_test(
+    name = "f14_simd_test",
+    size = "small",
+    srcs = ["f14_simd_test.cc"],
+    deps = [
+        "//rxtx:f14_simd",
+        "@googletest//:gtest_main",
+        "@rapidcheck",
+        "@rapidcheck//:rapidcheck_gtest",
+    ],
+)

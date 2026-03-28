@@ -258,14 +258,14 @@ void FiveTupleForwardingProcessor::RegisterControlCommands(
 
         struct TableInfo {
           uint32_t lcore_id;
-          rxtx::FastLookupTable<>* table;
+          FlowTable* table;
         };
         auto tables = std::make_shared<std::vector<TableInfo>>();
 
         for (uint32_t lcore_id : runtime.get_lcore_ids()) {
           auto* pmd = static_cast<PmdData*>(
               runtime.get_processor_data(lcore_id));
-          rxtx::FastLookupTable<>* tbl = pmd ? pmd->table : nullptr;
+          FlowTable* tbl = pmd ? pmd->table : nullptr;
           tables->push_back({lcore_id, tbl});
           if (tbl != nullptr) {
             tbl->SetModifiable(false);
@@ -292,10 +292,9 @@ void FiveTupleForwardingProcessor::RegisterControlCommands(
                 for (const auto& info : *tables) {
                   nlohmann::json entries = nlohmann::json::array();
                   if (info.table != nullptr) {
-                    for (auto it = info.table->Begin();
-                         it != info.table->End(); ++it) {
-                      entries.push_back(SerializeLookupEntry(**it));
-                    }
+                    info.table->ForEachEntry([&](rxtx::LookupEntry* e) {
+                      entries.push_back(SerializeLookupEntry(*e));
+                    });
                   }
                   threads_array.push_back(
                       {{"lcore_id", info.lcore_id}, {"entries", entries}});
@@ -331,14 +330,14 @@ void FiveTupleForwardingProcessor::RegisterControlCommands(
 
         struct TableInfo {
           uint32_t lcore_id;
-          rxtx::FastLookupTable<>* table;
+          FlowTable* table;
         };
         auto tables = std::make_shared<std::vector<TableInfo>>();
 
         for (uint32_t lcore_id : runtime.get_lcore_ids()) {
           auto* pmd = static_cast<PmdData*>(
               runtime.get_processor_data(lcore_id));
-          rxtx::FastLookupTable<>* tbl = pmd ? pmd->table : nullptr;
+          FlowTable* tbl = pmd ? pmd->table : nullptr;
           tables->push_back({lcore_id, tbl});
           if (tbl != nullptr) {
             tbl->SetModifiable(false);

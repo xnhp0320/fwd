@@ -6,7 +6,6 @@
 
 #include "processor/pmd_job.h"
 #include "processor/processor_registry.h"
-#include "rxtx/fast_lookup_table.h"
 
 using namespace dpdk_config;
 using namespace processor;
@@ -28,7 +27,7 @@ class FiveTupleForwardingProcessorTestAccess {
 
   uint16_t max_batch_count() const { return proc_.max_batch_count_; }
 
-  rxtx::FastLookupTable<>& table() { return proc_.table_; }
+  FiveTupleForwardingProcessor::FlowTable& table() { return proc_.table_; }
 
   static constexpr uint16_t kBatchSize =
       FiveTupleForwardingProcessor::kBatchSize;

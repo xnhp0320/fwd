@@ -11,7 +11,13 @@
 #include "processor/packet_stats.h"
 #include "processor/processor_context.h"
 #include "processor/pmd_job.h"
+// Compile-time toggle: define USE_FAST_LOOKUP_TABLE to use the abseil-backed
+// FastLookupTable instead of the default F14-backed F14LookupTable.
+#ifndef USE_FAST_LOOKUP_TABLE
+#include "rxtx/f14_lookup_table.h"
+#else
 #include "rxtx/fast_lookup_table.h"
+#endif
 
 namespace session {
 class SessionTable;
@@ -46,9 +52,17 @@ class FiveTupleForwardingProcessor
     }
   };
 
+  // Compile-time table selection: F14LookupTable by default,
+  // define USE_FAST_LOOKUP_TABLE to use the abseil-backed FastLookupTable.
+#ifndef USE_FAST_LOOKUP_TABLE
+  using FlowTable = rxtx::F14LookupTable<>;
+#else
+  using FlowTable = rxtx::FastLookupTable<>;
+#endif
+
   // Per-PMD opaque data exported to ProcessorContext for control-plane access.
   struct PmdData {
-    rxtx::FastLookupTable<>* table;
+    FlowTable* table;
     ProcessorStats* stats;
   };
 
@@ -94,8 +108,6 @@ class FiveTupleForwardingProcessor
 
  private:
   friend class FiveTupleForwardingProcessorTestAccess;
-
-  using FlowTable = rxtx::FastLookupTable<>;
 
   static constexpr uint16_t kBatchSize = 32;
   static constexpr std::size_t kGcBatchSize = 16;
