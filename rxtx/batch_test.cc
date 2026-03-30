@@ -101,7 +101,8 @@ TEST_F(BatchTest, BatchResultPrefetchFilterSplitsKeepAndFailoverBatches) {
   rxtx::Batch<kSize> fail_over_batch;
 
   main_res.PrefetchFilter<2>(
-      [](rxtx::Packet* pkt, uint16_t& out) -> bool {
+      [](rxtx::Packet* pkt, uint16_t& out,
+         [[maybe_unused]] uint16_t idx) -> bool {
         out = pkt->Length();
         return (out % 2) == 0;
       },

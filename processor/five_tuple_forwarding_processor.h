@@ -115,10 +115,13 @@ class FiveTupleForwardingProcessor
   static constexpr std::size_t kGcBatchSize = 16;
   static constexpr std::size_t kDefaultCapacity = 65536;
   using PacketBatch = rxtx::Batch<kBatchSize>;
+  using PrefetchContextBatch =
+      rxtx::BatchResult<typename FlowTable::PrefetchContext, kBatchSize>;
   using LookupResultBatch = rxtx::BatchResult<rxtx::LookupEntry*, kBatchSize>;
 
   void ParseBatch(PacketBatch& batch);
-  void LookupL1AndSplit(PacketBatch& parsed_batch,
+  void BuildPrefetchContexts(PrefetchContextBatch& contexts);
+  void LookupL1AndSplit(PrefetchContextBatch& contexts,
                         LookupResultBatch& hit_results,
                         PacketBatch& miss_batch);
   void BuildMissResultsAndResolveSessions(PacketBatch& miss_batch,

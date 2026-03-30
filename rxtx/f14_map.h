@@ -310,9 +310,15 @@ class F14Map {
   F14Map(const F14Map&) = delete;
   F14Map& operator=(const F14Map&) = delete;
 
-  Mapped* Find(const Key& key) {
+  void Prefetch(const Key& key, HashPair& hp_out) {
+    hp_out = SplitHash(hash_(key));
+    if (chunks_ == nullptr) return;
+    ChunkType& chunk = chunks_[hp_out.hash & chunk_mask_];
+    __builtin_prefetch(&chunk, 0, 1);
+  }
+
+  Mapped* FindWithHashPair(const Key& key, const HashPair& hp) {
     if (chunks_ == nullptr) return nullptr;
-    auto hp = SplitHash(hash_(key));
     std::size_t index = hp.hash;
     std::size_t delta = ProbeDelta(hp.tag);
 
@@ -335,6 +341,15 @@ class F14Map {
       index += delta;
     }
     return nullptr;
+  }
+
+  const Mapped* FindWithHashPair(const Key& key, const HashPair& hp) const {
+    return const_cast<F14Map*>(this)->FindWithHashPair(key, hp);
+  }
+
+  Mapped* Find(const Key& key) {
+    HashPair hp = SplitHash(hash_(key));
+    return FindWithHashPair(key, hp);
   }
 
   const Mapped* Find(const Key& key) const {

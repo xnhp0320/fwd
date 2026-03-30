@@ -82,8 +82,8 @@ class BatchResult {
   template <uint16_t N = 0, typename Fn>
   void PrefetchFilter(Fn&& fn, BatchType& fail_over_batch) {
     static_assert(
-        std::is_invocable_r_v<bool, Fn&, Packet*, T&>,
-        "BatchResult::PrefetchFilter requires fn(Packet*, T&) -> bool");
+        std::is_invocable_r_v<bool, Fn&, Packet*, T&, uint16_t>,
+        "BatchResult::PrefetchFilter requires fn(Packet*, T&, uint16_t idx) -> bool");
     assert(batch_ != &fail_over_batch);
 
     uint16_t keep_write = 0;
@@ -98,7 +98,7 @@ class BatchResult {
 
       Packet* pkt = &Packet::from(batch_->Data()[i]);
       T built_result{};
-      if (std::invoke(fn, pkt, built_result)) {
+      if (std::invoke(fn, pkt, built_result, i)) {
         batch_->Data()[keep_write] = batch_->Data()[i];
         results_[keep_write] = std::move(built_result);
         ++keep_write;

@@ -50,6 +50,8 @@ using LruList = boost::intrusive::list<
 template <typename Allocator = StdAllocator>
 class FastLookupTable {
  public:
+  struct PrefetchContext {};
+
   using Set = absl::flat_hash_set<LookupEntry*, LookupEntryHash, LookupEntryEq>;
   using Iterator = Set::iterator;
 
@@ -71,6 +73,14 @@ class FastLookupTable {
   // Convenience: find using PacketMetadata directly.
   // Non-const because a hit promotes the entry in the LRU list.
   LookupEntry* Find(const PacketMetadata& meta);
+
+  // Compatibility with F14LookupTable prefetch interface.
+  void Prefetch(const PacketMetadata& /*meta*/, PrefetchContext& /*ctx*/) {}
+
+  LookupEntry* FindWithPrefetch(const PacketMetadata& meta,
+                                const PrefetchContext& /*ctx*/) {
+    return Find(meta);
+  }
 
   // Remove a flow entry by pointer. Returns true if removed.
   // Returns false without side effects if modifiable_ is false.

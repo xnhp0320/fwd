@@ -280,6 +280,19 @@ TEST(F14MapSetTest, InsertAndFind) {
   EXPECT_EQ(*found, 1);
 }
 
+TEST(F14MapSetTest, PrefetchAndFindWithHashPair) {
+  IntSet map;
+  map.Insert(7, 7);
+
+  HashPair hp{};
+  map.Prefetch(7, hp);
+  int* found = map.FindWithHashPair(7, hp);
+  ASSERT_NE(found, nullptr);
+  EXPECT_EQ(*found, 7);
+
+  EXPECT_EQ(map.FindWithHashPair(8, hp), nullptr);
+}
+
 TEST(F14MapSetTest, InsertDuplicate) {
   IntSet map;
   auto [val1, ins1] = map.Insert(1, 1);

@@ -45,6 +45,8 @@ using F14LruList = boost::intrusive::list<
 template <typename Allocator = StdAllocator>
 class F14LookupTable {
  public:
+  using PrefetchContext = f14::HashPair;
+
   explicit F14LookupTable(std::size_t capacity);
 
   // Insert a flow entry. Returns pointer to the entry (existing or new).
@@ -63,6 +65,13 @@ class F14LookupTable {
   // Convenience: find using PacketMetadata directly.
   // Non-const because a hit promotes the entry in the LRU list.
   LookupEntry* Find(const PacketMetadata& meta);
+
+  // Build prefetch context and prefetch target chunk for subsequent lookup.
+  void Prefetch(const PacketMetadata& meta, PrefetchContext& ctx);
+
+  // Find using precomputed prefetch context.
+  LookupEntry* FindWithPrefetch(const PacketMetadata& meta,
+                                const PrefetchContext& ctx);
 
   // Remove a flow entry by pointer. Returns true if removed.
   // Returns false without side effects if modifiable_ is false.
@@ -164,9 +173,25 @@ LookupEntry* F14LookupTable<Allocator>::Find(
 template <typename Allocator>
 LookupEntry* F14LookupTable<Allocator>::Find(
     const PacketMetadata& meta) {
+  PrefetchContext ctx{};
+  Prefetch(meta, ctx);
+  return FindWithPrefetch(meta, ctx);
+}
+
+template <typename Allocator>
+void F14LookupTable<Allocator>::Prefetch(const PacketMetadata& meta,
+                                         PrefetchContext& ctx) {
   LookupEntry probe{};
   probe.FromMetadata(meta);
-  LookupEntry** val = map_.Find(&probe);
+  map_.Prefetch(&probe, ctx);
+}
+
+template <typename Allocator>
+LookupEntry* F14LookupTable<Allocator>::FindWithPrefetch(
+    const PacketMetadata& meta, const PrefetchContext& ctx) {
+  LookupEntry probe{};
+  probe.FromMetadata(meta);
+  LookupEntry** val = map_.FindWithHashPair(&probe, ctx);
   if (val == nullptr) return nullptr;
   LookupEntry* entry = *val;
   std::size_t slot = SlotIndex(entry);

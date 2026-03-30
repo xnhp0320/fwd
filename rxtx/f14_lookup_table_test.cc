@@ -78,6 +78,12 @@ RC_GTEST_PROP(F14LookupTableProperty, InsertFindRoundTrip, ()) {
   LookupEntry* found2 = table.Find(meta);
   RC_ASSERT(found2 != nullptr);
   RC_ASSERT(found2 == inserted);
+
+  F14LookupTable<>::PrefetchContext ctx{};
+  table.Prefetch(meta, ctx);
+  LookupEntry* found3 = table.FindWithPrefetch(meta, ctx);
+  RC_ASSERT(found3 != nullptr);
+  RC_ASSERT(found3 == inserted);
 }
 
 // ---------------------------------------------------------------------------

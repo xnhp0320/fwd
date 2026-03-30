@@ -95,18 +95,25 @@ void FiveTupleForwardingProcessor::ParseBatch(PacketBatch& batch) {
   });
 }
 
+void FiveTupleForwardingProcessor::BuildPrefetchContexts(PrefetchContextBatch& contexts) {
+  contexts.Build([&](rxtx::Packet& pkt, FlowTable::PrefetchContext& ctx) {
+    table_.Prefetch(pkt.Metadata(), ctx);
+  });
+}
+
 void FiveTupleForwardingProcessor::LookupL1AndSplit(
-    PacketBatch& parsed_batch, LookupResultBatch& hit_results,
-    PacketBatch& miss_batch) {
+    PrefetchContextBatch& contexts,
+    LookupResultBatch& hit_results, PacketBatch& miss_batch) {
   hit_results.PrefetchFilter<1>(
-      [&](rxtx::Packet* pkt, rxtx::LookupEntry*& entry) -> bool {
-        entry = table_.Find(pkt->Metadata());
+      [&](rxtx::Packet* pkt, rxtx::LookupEntry*& entry,
+          uint16_t idx) -> bool {
+        entry = table_.FindWithPrefetch(pkt->Metadata(), contexts.ResultAt(idx));
         if (entry == nullptr) {
           proc_stats_.RecordFlowTableMiss();
           return false;
         }
         if (entry->session != nullptr) {
-            rte_prefetch0(entry->session);
+          rte_prefetch0(entry->session);
         }
         return true;
       },
@@ -197,9 +204,12 @@ void FiveTupleForwardingProcessor::process_impl() {
     }
 
     PacketBatch flow_miss_batch;
+    PrefetchContextBatch prefetch_contexts(&parsed_batch);
     LookupResultBatch l1_hit_results(&parsed_batch);
     LookupResultBatch flow_miss_results(&flow_miss_batch);
-    LookupL1AndSplit(parsed_batch, l1_hit_results, flow_miss_batch);
+    BuildPrefetchContexts(prefetch_contexts);
+    LookupL1AndSplit(prefetch_contexts, l1_hit_results,
+                     flow_miss_batch);
     ResolveSessions(l1_hit_results, /*record_session_lookup_miss=*/true);
     BuildMissResultsAndResolveSessions(flow_miss_batch, flow_miss_results);
 
