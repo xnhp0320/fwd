@@ -35,6 +35,13 @@ cc_library(
 )
 
 cc_library(
+    name = "batch_result",
+    hdrs = ["batch_result.h"],
+    deps = ["//rxtx:batch"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
     name = "test_utils",
     hdrs = ["test_utils.h"],
     deps = ["//:dpdk_lib"],
@@ -94,6 +101,7 @@ cc_test(
     srcs = ["batch_test.cc"],
     deps = [
         "//rxtx:batch",
+        "//rxtx:batch_result",
         "//rxtx:test_utils",
         "@googletest//:gtest",
     ],

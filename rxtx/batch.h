@@ -9,6 +9,9 @@
 
 namespace rxtx {
 
+template <typename T, uint16_t BatchSize, bool SafeMode>
+class BatchResult;
+
 template <uint16_t BatchSize, bool SafeMode = false>
 class Batch {
  public:
@@ -84,6 +87,27 @@ class Batch {
     }
     count_ = write;
   }
+
+  // Retain packets where fn returns true. Rejected mbufs are NOT freed —
+  // they are simply excluded from the compacted result.
+  // Retained packets are compacted to contiguous positions [0, new_count),
+  // prefetching the packet at i+N when i+N < count.
+  template <uint16_t N, typename Fn>
+  void PrefetchFilter(Fn&& fn) {
+    uint16_t write = 0;
+    for (uint16_t i = 0; i < count_; ++i) {
+      if constexpr (N > 0) {
+        if (i + N < count_) {
+          Packet::from(mbufs_[i + N]).Prefetch();
+        }
+      }
+      Packet& pkt = Packet::from(mbufs_[i]);
+      if (fn(pkt)) {
+        mbufs_[write++] = mbufs_[i];
+      }
+    }
+    count_ = write;
+  }
   // Append a Packet's underlying mbuf to the batch.
   // SafeMode=false: void, no bounds check, maximum performance.
   // SafeMode=true: returns bool, checks capacity first.
@@ -107,6 +131,9 @@ class Batch {
   }
 
  private:
+  template <typename T, uint16_t ResultBatchSize, bool ResultSafeMode>
+  friend class BatchResult;
+
   rte_mbuf* mbufs_[BatchSize];
   uint16_t count_;
 };
