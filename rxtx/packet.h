@@ -58,6 +58,7 @@ class Packet {
   void Prefetch() {
     rte_prefetch0(Data());
     rte_prefetch0(&metadata_);
+    rte_prefetch0(reinterpret_cast<uint8_t*>(&mbuf_) + RTE_CACHE_LINE_SIZE);
   }
 
   // Free the underlying mbuf back to its mempool

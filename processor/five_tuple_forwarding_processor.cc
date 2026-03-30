@@ -132,6 +132,7 @@ void FiveTupleForwardingProcessor::ResolveSessions(
     return;
   }
 
+  uint64_t ts = rte_rdtsc();
   lookup_results.ForEach([&](rxtx::Packet& pkt, rxtx::LookupEntry*& entry) {
     if (entry == nullptr) {
       return;
@@ -141,7 +142,7 @@ void FiveTupleForwardingProcessor::ResolveSessions(
       auto* se = static_cast<session::SessionEntry*>(entry->session);
       uint32_t current_ver = se->version.load(std::memory_order_relaxed);
       if (entry->cached_version == current_ver) {
-        se->timestamp.store(rte_rdtsc(), std::memory_order_relaxed);
+        se->timestamp.store(ts, std::memory_order_relaxed);
         return;
       }
       entry->session = nullptr;
@@ -160,7 +161,7 @@ void FiveTupleForwardingProcessor::ResolveSessions(
     if (session != nullptr) {
       entry->session = session;
       entry->cached_version = session->version.load(std::memory_order_relaxed);
-      session->timestamp.store(rte_rdtsc(), std::memory_order_relaxed);
+      session->timestamp.store(ts, std::memory_order_relaxed);
     }
   });
 }
