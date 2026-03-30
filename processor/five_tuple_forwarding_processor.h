@@ -11,6 +11,8 @@
 #include "processor/packet_stats.h"
 #include "processor/processor_context.h"
 #include "processor/pmd_job.h"
+#include "rxtx/batch.h"
+#include "rxtx/batch_result.h"
 // Compile-time toggle: define USE_FAST_LOOKUP_TABLE to use the abseil-backed
 // FastLookupTable instead of the default F14-backed F14LookupTable.
 #ifndef USE_FAST_LOOKUP_TABLE
@@ -112,6 +114,17 @@ class FiveTupleForwardingProcessor
   static constexpr uint16_t kBatchSize = 32;
   static constexpr std::size_t kGcBatchSize = 16;
   static constexpr std::size_t kDefaultCapacity = 65536;
+  using PacketBatch = rxtx::Batch<kBatchSize>;
+  using LookupResultBatch = rxtx::BatchResult<rxtx::LookupEntry*, kBatchSize>;
+
+  void ParseBatch(PacketBatch& batch);
+  void LookupL1AndSplit(PacketBatch& parsed_batch,
+                        LookupResultBatch& hit_results,
+                        PacketBatch& miss_batch);
+  void BuildMissResultsAndResolveSessions(PacketBatch& miss_batch,
+                                          LookupResultBatch& miss_results);
+  void ResolveSessions(LookupResultBatch& lookup_results,
+                       bool record_session_lookup_miss);
   void RefreshGcScheduling();
   bool ShouldTriggerGc() const;
   void RunFlowGc(uint64_t now_tsc);

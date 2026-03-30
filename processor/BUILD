@@ -94,6 +94,7 @@ cc_library(
         "//config:dpdk_config",
         "//control:command_api",
         "//rxtx:batch",
+        "//rxtx:batch_result",
         "//rxtx:fast_lookup_table",
         "//rxtx:f14_lookup_table",
         "//rxtx:packet",

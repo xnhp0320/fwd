@@ -6,6 +6,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <type_traits>
 #include <utility>
 
@@ -66,65 +67,102 @@ class BatchResult {
 
   template <uint16_t N, typename Fn>
   void PrefetchForEach(Fn&& fn) {
-    for (uint16_t i = 0; i < batch_->count_; ++i) {
+    const uint16_t count = batch_->Count();
+    for (uint16_t i = 0; i < count; ++i) {
       if constexpr (N > 0) {
-        if (i + N < batch_->count_) {
-          Packet::from(batch_->mbufs_[i + N]).Prefetch();
+        if (i + N < count) {
+          Packet::from(batch_->Data()[i + N]).Prefetch();
         }
       }
-      Packet& pkt = Packet::from(batch_->mbufs_[i]);
+      Packet& pkt = Packet::from(batch_->Data()[i]);
       fn(pkt, results_[i]);
     }
   }
 
-  template <std::size_t K, typename LaneFn>
-  void Classify(
-      LaneFn&& lane_fn,
-      const std::array<BatchType*, K - 1>& slow_batches,
-      const std::array<BatchResult<T, BatchSize, SafeMode>*, K - 1>&
-          slow_results) {
-    static_assert(K >= 1, "Classify requires at least one lane");
+  template <uint16_t N = 0, typename Fn>
+  void PrefetchFilter(Fn&& fn, BatchType& fail_over_batch) {
+    static_assert(
+        std::is_invocable_r_v<bool, Fn&, Packet*, T&>,
+        "BatchResult::PrefetchFilter requires fn(Packet*, T&) -> bool");
+    assert(batch_ != &fail_over_batch);
 
-    std::array<uint16_t, K - 1> slow_write{};
-    for (std::size_t lane = 0; lane + 1 < K; ++lane) {
-      assert(slow_batches[lane] != nullptr);
-      assert(slow_results[lane] != nullptr);
-      assert(slow_results[lane]->GetBatch() == slow_batches[lane]);
-      slow_write[lane] = slow_batches[lane]->count_;
-    }
-
-    uint16_t fast_write = 0;
-    const uint16_t original_count = batch_->count_;
+    uint16_t keep_write = 0;
+    uint16_t fail_write = fail_over_batch.Count();
+    const uint16_t original_count = batch_->Count();
     for (uint16_t i = 0; i < original_count; ++i) {
-      Packet& pkt = Packet::from(batch_->mbufs_[i]);
-      T& result = results_[i];
-      const std::size_t lane = static_cast<std::size_t>(lane_fn(pkt, result));
-      assert(lane < K);
-      if (lane == 0) {
-        if (fast_write != i) {
-          batch_->mbufs_[fast_write] = batch_->mbufs_[i];
-          results_[fast_write] = std::move(results_[i]);
+      if constexpr (N > 0) {
+        if (i + N < original_count) {
+          Packet::from(batch_->Data()[i + N]).Prefetch();
         }
-        ++fast_write;
+      }
+
+      Packet* pkt = &Packet::from(batch_->Data()[i]);
+      T built_result{};
+      if (std::invoke(fn, pkt, built_result)) {
+        batch_->Data()[keep_write] = batch_->Data()[i];
+        results_[keep_write] = std::move(built_result);
+        ++keep_write;
         continue;
       }
 
-      const std::size_t slow_idx = lane - 1;
-      const uint16_t dst = slow_write[slow_idx]++;
-      slow_batches[slow_idx]->mbufs_[dst] = batch_->mbufs_[i];
-      slow_results[slow_idx]->results_[dst] = std::move(results_[i]);
+      assert(fail_write < BatchSize);
+      fail_over_batch.Data()[fail_write++] = batch_->Data()[i];
     }
 
-    batch_->count_ = fast_write;
-    for (std::size_t lane = 0; lane + 1 < K; ++lane) {
-      slow_batches[lane]->count_ = slow_write[lane];
-    }
+    batch_->SetCount(keep_write);
+    fail_over_batch.SetCount(fail_write);
   }
 
  private:
   BatchType* batch_;
   std::array<T, BatchSize> results_;
 };
+
+template <typename T, std::size_t N, uint16_t BatchSize, bool SafeMode = false,
+          typename Fn>
+void Classify(Batch<BatchSize, SafeMode>& input_batch, Fn&& fn,
+              const std::array<BatchResult<T, BatchSize, SafeMode>*, N>&
+                  outputs) {
+  static_assert(N > 0, "Classify requires at least one output lane");
+  static_assert(std::is_default_constructible_v<T>,
+                "Classify requires default-constructible result type T");
+  static_assert(std::is_move_assignable_v<T> || std::is_copy_assignable_v<T>,
+                "Classify requires move-assignable or copy-assignable T");
+  static_assert(std::is_invocable_r_v<std::size_t, Fn&, Packet*, T&>,
+                "Classify requires fn(Packet*, T&) -> lane_index");
+
+  std::array<uint16_t, N> lane_write{};
+  for (std::size_t lane = 0; lane < N; ++lane) {
+    assert(outputs[lane] != nullptr);
+    Batch<BatchSize, SafeMode>* out_batch = outputs[lane]->GetBatch();
+    assert(out_batch != nullptr);
+    assert(out_batch != &input_batch);
+    lane_write[lane] = out_batch->Count();
+    for (std::size_t other = 0; other < lane; ++other) {
+      assert(outputs[other]->GetBatch() != out_batch);
+    }
+  }
+
+  const uint16_t original_count = input_batch.Count();
+  for (uint16_t i = 0; i < original_count; ++i) {
+    Packet* pkt = &Packet::from(input_batch.Data()[i]);
+    T result{};
+    const std::size_t lane = std::invoke(fn, pkt, result);
+    assert(lane < N);
+
+    BatchResult<T, BatchSize, SafeMode>* out = outputs[lane];
+    Batch<BatchSize, SafeMode>* out_batch = out->GetBatch();
+    const uint16_t dst = lane_write[lane]++;
+    assert(dst < BatchSize);
+    out_batch->Data()[dst] = input_batch.Data()[i];
+    out->ResultAt(dst) = std::move(result);
+  }
+
+  input_batch.SetCount(0);
+  for (std::size_t lane = 0; lane < N; ++lane) {
+    outputs[lane]->GetBatch()->SetCount(lane_write[lane]);
+  }
+}
 
 }  // namespace rxtx
 

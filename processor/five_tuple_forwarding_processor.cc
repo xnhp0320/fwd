@@ -15,6 +15,7 @@
 #include "absl/strings/str_cat.h"
 #include "processor/processor_registry.h"
 #include "rxtx/batch.h"
+#include "rxtx/batch_result.h"
 #include "rxtx/packet.h"
 #include "rxtx/packet_metadata.h"
 #include "session/session_entry.h"
@@ -82,114 +83,152 @@ absl::Status FiveTupleForwardingProcessor::check_impl(
   return absl::OkStatus();
 }
 
+void FiveTupleForwardingProcessor::ParseBatch(PacketBatch& batch) {
+  batch.PrefetchFilter<1>([&](rxtx::Packet& pkt) -> bool {
+    rxtx::PacketMetadata meta{};
+    if (rxtx::PacketMetadata::Parse(pkt, meta) != rxtx::ParseResult::kOk) {
+      pkt.Free();
+      return false;
+    }
+    pkt.Metadata() = meta;
+    return true;
+  });
+}
+
+void FiveTupleForwardingProcessor::LookupL1AndSplit(
+    PacketBatch& parsed_batch, LookupResultBatch& hit_results,
+    PacketBatch& miss_batch) {
+  hit_results.PrefetchFilter<1>(
+      [&](rxtx::Packet* pkt, rxtx::LookupEntry*& entry) -> bool {
+        entry = table_.Find(pkt->Metadata());
+        if (entry == nullptr) {
+          proc_stats_.RecordFlowTableMiss();
+          return false;
+        }
+        return true;
+      },
+      miss_batch);
+}
+
+void FiveTupleForwardingProcessor::BuildMissResultsAndResolveSessions(
+    PacketBatch& miss_batch, LookupResultBatch& miss_results) {
+  if (miss_batch.Count() == 0) {
+    return;
+  }
+
+  miss_results.Build([&](rxtx::Packet& pkt, rxtx::LookupEntry*& entry) {
+    const rxtx::PacketMetadata& meta = pkt.Metadata();
+    entry = table_.Insert(meta.src_ip, meta.dst_ip, meta.src_port, meta.dst_port,
+                          meta.protocol, meta.vni,
+                          static_cast<uint8_t>(meta.flags & rxtx::kFlagIpv6));
+  });
+
+  ResolveSessions(miss_results, /*record_session_lookup_miss=*/false);
+}
+
+void FiveTupleForwardingProcessor::ResolveSessions(
+    LookupResultBatch& lookup_results, bool record_session_lookup_miss) {
+  if (session_table_ == nullptr) {
+    return;
+  }
+
+  lookup_results.ForEach([&](rxtx::Packet& pkt, rxtx::LookupEntry*& entry) {
+    if (entry == nullptr) {
+      return;
+    }
+
+    if (entry->session != nullptr) {
+      auto* se = static_cast<session::SessionEntry*>(entry->session);
+      uint32_t current_ver = se->version.load(std::memory_order_relaxed);
+      if (entry->cached_version == current_ver) {
+        se->timestamp.store(rte_rdtsc(), std::memory_order_relaxed);
+        return;
+      }
+      entry->session = nullptr;
+      entry->cached_version = 0;
+    }
+
+    session::SessionKey session_key =
+        session::SessionKey::FromMetadata(pkt.Metadata(), /*zone_id=*/0);
+    session::SessionEntry* session = session_table_->Lookup(session_key);
+    if (session == nullptr) {
+      if (record_session_lookup_miss) {
+        proc_stats_.RecordSessionLookupMiss();
+      }
+      session = session_table_->Insert(session_key);
+    }
+    if (session != nullptr) {
+      entry->session = session;
+      entry->cached_version = session->version.load(std::memory_order_relaxed);
+      session->timestamp.store(rte_rdtsc(), std::memory_order_relaxed);
+    }
+  });
+}
+
 void FiveTupleForwardingProcessor::process_impl() {
   max_batch_count_ = 0;
 
   const auto& tx = config().tx_queues[0];
 
   for (const auto& rx : config().rx_queues) {
-    rxtx::Batch<kBatchSize> batch;
-    batch.SetCount(rte_eth_rx_burst(rx.port_id, rx.queue_id, batch.Data(),
-                                    batch.Capacity()));
+    PacketBatch parsed_batch;
+    parsed_batch.SetCount(rte_eth_rx_burst(rx.port_id, rx.queue_id,
+                                           parsed_batch.Data(),
+                                           parsed_batch.Capacity()));
 
     // Note: some NIC PMD drivers with limited burst sizes (e.g., virtio, tap)
     // may return fewer packets per burst even under load, which can cause false
     // light-traffic classification.
-    max_batch_count_ = std::max(max_batch_count_, batch.Count());
+    max_batch_count_ = std::max(max_batch_count_, parsed_batch.Count());
 
-    if (batch.Count() == 0) {
-      batch.Release();
+    if (parsed_batch.Count() == 0) {
+      parsed_batch.Release();
       continue;
     }
 
-    // Parse each packet and perform two-tier flow-table / session lookup.
-    batch.PrefetchForEach<3>([&](rxtx::Packet& pkt) {
-      rxtx::PacketMetadata meta{};
-      auto result = rxtx::PacketMetadata::Parse(pkt, meta);
-      if (result != rxtx::ParseResult::kOk) {
-        // Parse failed — skip lookup but still forward the packet.
-        return;
-      }
+    ParseBatch(parsed_batch);
+    if (parsed_batch.Count() == 0) {
+      parsed_batch.Release();
+      continue;
+    }
 
-      rxtx::LookupEntry* entry = table_.Find(meta);
-
-      if (entry != nullptr && session_table_ != nullptr) {
-        // L1 hit — validate session version.
-        if (entry->session != nullptr) {
-          auto* se =
-              static_cast<session::SessionEntry*>(entry->session);
-          uint32_t current_ver =
-              se->version.load(std::memory_order_relaxed);
-          if (entry->cached_version == current_ver) {
-            // Fast path: session valid, update timestamp.
-            se->timestamp.store(rte_rdtsc(), std::memory_order_relaxed);
-            return;
-          }
-          // Version mismatch: invalidate cached pointer.
-          entry->session = nullptr;
-          entry->cached_version = 0;
-        }
-
-        // L2 lookup (session pointer is null — initial or invalidated).
-        session::SessionKey session_key =
-            session::SessionKey::FromMetadata(meta, /*zone_id=*/0);
-        session::SessionEntry* session = session_table_->Lookup(session_key);
-        if (session == nullptr) {
-          proc_stats_.RecordSessionLookupMiss();
-          session = session_table_->Insert(session_key);
-        }
-        if (session != nullptr) {
-          entry->session = session;
-          entry->cached_version =
-              session->version.load(std::memory_order_relaxed);
-          session->timestamp.store(rte_rdtsc(), std::memory_order_relaxed);
-        }
-
-      } else if (entry == nullptr) {
-        // L1 miss — insert into FastLookupTable.
-        proc_stats_.RecordFlowTableMiss();
-        entry = table_.Insert(meta.src_ip, meta.dst_ip, meta.src_port,
-                              meta.dst_port, meta.protocol, meta.vni,
-                              static_cast<uint8_t>(meta.flags & rxtx::kFlagIpv6));
-        if (entry != nullptr && session_table_ != nullptr) {
-          session::SessionKey session_key =
-              session::SessionKey::FromMetadata(meta, /*zone_id=*/0);
-          session::SessionEntry* session =
-              session_table_->Lookup(session_key);
-          if (session == nullptr) {
-            session = session_table_->Insert(session_key);
-          }
-          if (session != nullptr) {
-            entry->session = session;
-            entry->cached_version =
-                session->version.load(std::memory_order_relaxed);
-            session->timestamp.store(rte_rdtsc(), std::memory_order_relaxed);
-          }
-        }
-      }
-      // If entry != nullptr && session_table_ == nullptr: L1 hit, no session
-      // ops — backward compatible behavior.
-    });
+    PacketBatch flow_miss_batch;
+    LookupResultBatch l1_hit_results(&parsed_batch);
+    LookupResultBatch flow_miss_results(&flow_miss_batch);
+    LookupL1AndSplit(parsed_batch, l1_hit_results, flow_miss_batch);
+    ResolveSessions(l1_hit_results, /*record_session_lookup_miss=*/true);
+    BuildMissResultsAndResolveSessions(flow_miss_batch, flow_miss_results);
 
     // Record per-thread stats before transmitting.
     if (stats_) {
       uint64_t total_bytes = 0;
-      for (uint16_t i = 0; i < batch.Count(); ++i) {
-        total_bytes += rte_pktmbuf_pkt_len(batch.Data()[i]);
+      for (uint16_t i = 0; i < parsed_batch.Count(); ++i) {
+        total_bytes += rte_pktmbuf_pkt_len(parsed_batch.Data()[i]);
       }
-      stats_->RecordBatch(batch.Count(), total_bytes);
+      for (uint16_t i = 0; i < flow_miss_batch.Count(); ++i) {
+        total_bytes += rte_pktmbuf_pkt_len(flow_miss_batch.Data()[i]);
+      }
+      stats_->RecordBatch(parsed_batch.Count() + flow_miss_batch.Count(),
+                          total_bytes);
     }
 
-    uint16_t sent =
-        rte_eth_tx_burst(tx.port_id, tx.queue_id, batch.Data(), batch.Count());
+    const uint16_t parsed_count = parsed_batch.Count();
+    const uint16_t miss_count = flow_miss_batch.Count();
+    const uint16_t merged_count = parsed_count + miss_count;
+    for (uint16_t i = 0; i < miss_count; ++i) {
+      parsed_batch.Data()[parsed_count + i] = flow_miss_batch.Data()[i];
+    }
+    parsed_batch.SetCount(merged_count);
+
+    uint16_t sent = rte_eth_tx_burst(tx.port_id, tx.queue_id, parsed_batch.Data(),
+                                     parsed_batch.Count());
 
     // Free untransmitted mbufs.
-    for (uint16_t i = sent; i < batch.Count(); ++i) {
-      rte_pktmbuf_free(batch.Data()[i]);
-    }
+    rte_pktmbuf_free_bulk(parsed_batch.Data() + sent, parsed_batch.Count() - sent);
 
     // Release ownership so the Batch destructor doesn't double-free.
-    batch.Release();
+    parsed_batch.Release();
+    flow_miss_batch.Release();
   }
 
   RefreshGcScheduling();

@@ -86,7 +86,7 @@ TEST_F(BatchTest, BatchResultPrefetchForEachProcessesAllPackets) {
   }
 }
 
-TEST_F(BatchTest, BatchResultClassifyKeepsFastAndMovesSlowWithResults) {
+TEST_F(BatchTest, BatchResultPrefetchFilterSplitsKeepAndFailoverBatches) {
   constexpr uint16_t kSize = 16;
   rxtx::testing::TestMbufAllocator alloc(128);
 
@@ -97,54 +97,92 @@ TEST_F(BatchTest, BatchResultClassifyKeepsFastAndMovesSlowWithResults) {
     main_batch.Append(m);
   }
 
-  rxtx::Batch<kSize> slow1_batch;
-  rxtx::Batch<kSize> slow2_batch;
   rxtx::BatchResult<uint16_t, kSize> main_res(&main_batch);
-  rxtx::BatchResult<uint16_t, kSize> slow1_res(&slow1_batch);
-  rxtx::BatchResult<uint16_t, kSize> slow2_res(&slow2_batch);
+  rxtx::Batch<kSize> fail_over_batch;
 
-  main_res.Build([](rxtx::Packet& pkt, uint16_t& out) { out = pkt.Length(); });
-
-  std::array<rxtx::Batch<kSize>*, 2> slow_batches = {&slow1_batch, &slow2_batch};
-  std::array<rxtx::BatchResult<uint16_t, kSize>*, 2> slow_results = {
-      &slow1_res, &slow2_res};
-  main_res.Classify<3>(
-      [](rxtx::Packet&, uint16_t& out) -> std::size_t {
-        if ((out % 3) == 0) return 0;  // fast path
-        if ((out % 3) == 1) return 1;  // slow lane 1
-        return 2;                      // slow lane 2
+  main_res.PrefetchFilter<2>(
+      [](rxtx::Packet* pkt, uint16_t& out) -> bool {
+        out = pkt->Length();
+        return (out % 2) == 0;
       },
-      slow_batches, slow_results);
+      fail_over_batch);
 
-  EXPECT_EQ(main_batch.Count(), 2);   // 60, 63
-  EXPECT_EQ(slow1_batch.Count(), 2);  // 61, 64
-  EXPECT_EQ(slow2_batch.Count(), 2);  // 62, 65
+  EXPECT_EQ(main_batch.Count(), 3);       // 60, 62, 64
+  EXPECT_EQ(fail_over_batch.Count(), 3);  // 61, 63, 65
 
   main_res.ForEach([](rxtx::Packet& pkt, uint16_t& out) {
     EXPECT_EQ(out, pkt.Length());
-    EXPECT_EQ(out % 3, 0);
-  });
-  slow1_res.ForEach([](rxtx::Packet& pkt, uint16_t& out) {
-    EXPECT_EQ(out, pkt.Length());
-    EXPECT_EQ(out % 3, 1);
-  });
-  slow2_res.ForEach([](rxtx::Packet& pkt, uint16_t& out) {
-    EXPECT_EQ(out, pkt.Length());
-    EXPECT_EQ(out % 3, 2);
+    EXPECT_EQ(out % 2, 0);
   });
 
   for (uint16_t i = 0; i < main_batch.Count(); ++i) {
     rte_pktmbuf_free(main_batch.Data()[i]);
   }
-  for (uint16_t i = 0; i < slow1_batch.Count(); ++i) {
-    rte_pktmbuf_free(slow1_batch.Data()[i]);
-  }
-  for (uint16_t i = 0; i < slow2_batch.Count(); ++i) {
-    rte_pktmbuf_free(slow2_batch.Data()[i]);
+  for (uint16_t i = 0; i < fail_over_batch.Count(); ++i) {
+    rte_pktmbuf_free(fail_over_batch.Data()[i]);
   }
   main_batch.Release();
-  slow1_batch.Release();
-  slow2_batch.Release();
+  fail_over_batch.Release();
+}
+
+TEST_F(BatchTest, FreeClassifyDistributesIntoOutputBatchResults) {
+  constexpr uint16_t kSize = 16;
+  rxtx::testing::TestMbufAllocator alloc(128);
+
+  rxtx::Batch<kSize> input_batch;
+  for (uint16_t len = 60; len < 66; ++len) {
+    rte_mbuf* m = alloc.Alloc(RTE_PKTMBUF_HEADROOM, len);
+    ASSERT_NE(m, nullptr);
+    input_batch.Append(m);
+  }
+
+  rxtx::Batch<kSize> lane0_batch;
+  rxtx::Batch<kSize> lane1_batch;
+  rxtx::Batch<kSize> lane2_batch;
+  rxtx::BatchResult<uint16_t, kSize> lane0_res(&lane0_batch);
+  rxtx::BatchResult<uint16_t, kSize> lane1_res(&lane1_batch);
+  rxtx::BatchResult<uint16_t, kSize> lane2_res(&lane2_batch);
+
+  std::array<rxtx::BatchResult<uint16_t, kSize>*, 3> outputs = {
+      &lane0_res, &lane1_res, &lane2_res};
+  rxtx::Classify<uint16_t, 3>(
+      input_batch,
+      [](rxtx::Packet* pkt, uint16_t& out) -> std::size_t {
+        out = pkt->Length();
+        return static_cast<std::size_t>(out % 3);
+      },
+      outputs);
+
+  EXPECT_EQ(input_batch.Count(), 0);
+  EXPECT_EQ(lane0_batch.Count(), 2);  // 60, 63
+  EXPECT_EQ(lane1_batch.Count(), 2);  // 61, 64
+  EXPECT_EQ(lane2_batch.Count(), 2);  // 62, 65
+
+  lane0_res.ForEach([](rxtx::Packet& pkt, uint16_t& out) {
+    EXPECT_EQ(out, pkt.Length());
+    EXPECT_EQ(out % 3, 0);
+  });
+  lane1_res.ForEach([](rxtx::Packet& pkt, uint16_t& out) {
+    EXPECT_EQ(out, pkt.Length());
+    EXPECT_EQ(out % 3, 1);
+  });
+  lane2_res.ForEach([](rxtx::Packet& pkt, uint16_t& out) {
+    EXPECT_EQ(out, pkt.Length());
+    EXPECT_EQ(out % 3, 2);
+  });
+
+  for (uint16_t i = 0; i < lane0_batch.Count(); ++i) {
+    rte_pktmbuf_free(lane0_batch.Data()[i]);
+  }
+  for (uint16_t i = 0; i < lane1_batch.Count(); ++i) {
+    rte_pktmbuf_free(lane1_batch.Data()[i]);
+  }
+  for (uint16_t i = 0; i < lane2_batch.Count(); ++i) {
+    rte_pktmbuf_free(lane2_batch.Data()[i]);
+  }
+  lane0_batch.Release();
+  lane1_batch.Release();
+  lane2_batch.Release();
 }
 
 int main(int argc, char** argv) {
