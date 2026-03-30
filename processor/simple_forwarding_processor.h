@@ -38,7 +38,7 @@ class SimpleForwardingProcessor
   const PacketStats& GetStats() const { return *stats_; }
 
  private:
-  static constexpr uint16_t kBatchSize = 32;
+  static constexpr uint16_t kBatchSize = 64;
   PacketStats* stats_ = nullptr;
 };
 

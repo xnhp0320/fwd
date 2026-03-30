@@ -226,6 +226,8 @@ absl::Status DpdkPort::ConfigurePort() {
     // Jumbo frame support is now handled via MTU configuration
     // We'll set this after port configuration
     port_conf.rxmode.mtu = config_.mbuf_size - RTE_ETHER_HDR_LEN - RTE_ETHER_CRC_LEN;
+    // BUD: set mtu lower for faster driver (need to do properly)
+    port_conf.rxmode.mtu = 1500;
   }
 
   // Configure RSS (Receive Side Scaling) if requested

@@ -111,7 +111,7 @@ class FiveTupleForwardingProcessor
  private:
   friend class FiveTupleForwardingProcessorTestAccess;
 
-  static constexpr uint16_t kBatchSize = 32;
+  static constexpr uint16_t kBatchSize = 64;
   static constexpr std::size_t kGcBatchSize = 16;
   static constexpr std::size_t kDefaultCapacity = 65536;
   using PacketBatch = rxtx::Batch<kBatchSize>;
