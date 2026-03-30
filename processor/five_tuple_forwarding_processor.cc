@@ -105,6 +105,9 @@ void FiveTupleForwardingProcessor::LookupL1AndSplit(
           proc_stats_.RecordFlowTableMiss();
           return false;
         }
+        if (entry->session != nullptr) {
+            rte_prefetch0(entry->session);
+        }
         return true;
       },
       miss_batch);
