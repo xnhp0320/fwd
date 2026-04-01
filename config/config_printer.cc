@@ -42,6 +42,7 @@ std::string ConfigPrinter::ToJson(const DpdkConfig& config, int indent) {
   // Serialize session_capacity (only if non-zero)
   if (config.session_capacity > 0) {
     j["session_capacity"] = config.session_capacity;
+    j["session_hash_type"] = config.session_hash_type;
   }
 
   // Serialize fib_file (only if non-empty, includes algorithm suffix)

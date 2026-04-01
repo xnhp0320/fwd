@@ -150,6 +150,19 @@ int main() {
     TestCase("Invalid huge_pages negative", !ConfigValidator::Validate(config).ok());
   }
 
+  // Test session_hash_type validation
+  {
+    DpdkConfig config;
+
+    config.session_hash_type = "rte_hash";
+    TestCase("Valid session_hash_type rte_hash",
+             ConfigValidator::Validate(config).ok());
+
+    config.session_hash_type = "unsupported";
+    TestCase("Invalid session_hash_type unsupported",
+             !ConfigValidator::Validate(config).ok());
+  }
+
   // Test PCI allowlist/blocklist conflict
   {
     DpdkConfig config;

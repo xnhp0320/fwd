@@ -28,6 +28,7 @@ class ControlPlane {
     std::string socket_path = "/tmp/dpdk_control.sock";
     uint32_t shutdown_timeout_seconds = 10;
     uint32_t session_capacity = 0;
+    std::string session_hash_type = "rte_hash";
     std::string fib_file;
     std::string fib_algorithm = "lpm";
   };

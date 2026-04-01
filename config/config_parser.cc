@@ -397,6 +397,15 @@ absl::StatusOr<DpdkConfig> ConfigParser::ParseString(
     config.session_capacity = j["session_capacity"].get<uint32_t>();
   }
 
+  // Parse session_hash_type (optional string, default "rte_hash")
+  if (j.contains("session_hash_type")) {
+    if (!j["session_hash_type"].is_string()) {
+      return absl::InvalidArgumentError(
+          "Field 'session_hash_type' must be a string");
+    }
+    config.session_hash_type = j["session_hash_type"].get<std::string>();
+  }
+
   // Parse fib_file (optional string).
   // Format: "path/to/fib.txt" or "path/to/fib.txt, lpm" or "path/to/fib.txt, tbm"
   // The algorithm suffix is optional; defaults to "lpm".
@@ -447,7 +456,7 @@ absl::StatusOr<DpdkConfig> ConfigParser::ParseString(
   const std::set<std::string> known_fields = {
       "core_mask", "memory_channels", "pci_allowlist",
       "pci_blocklist", "log_level", "huge_pages", "ports", "pmd_threads",
-      "session_capacity", "fib_file", "additional_params"
+      "session_capacity", "session_hash_type", "fib_file", "additional_params"
   };
 
   for (auto it = j.begin(); it != j.end(); ++it) {

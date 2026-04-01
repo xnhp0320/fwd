@@ -93,6 +93,11 @@ absl::Status ControlPlane::Initialize(const Config& config) {
 
   // Create SessionTable if configured.
   if (config_.session_capacity > 0) {
+    if (config_.session_hash_type != "rte_hash") {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Unsupported session_hash_type: ",
+                       config_.session_hash_type));
+    }
     session_table_ = std::make_unique<session::SessionTable>();
     session::SessionTable::Config st_config;
     st_config.capacity = config_.session_capacity;

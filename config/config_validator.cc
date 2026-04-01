@@ -184,6 +184,12 @@ absl::Status ConfigValidator::Validate(const DpdkConfig& config) {
     }
   }
 
+  if (config.session_hash_type != "rte_hash") {
+    return absl::InvalidArgumentError(
+        absl::StrCat("session_hash_type must be 'rte_hash', got '",
+                     config.session_hash_type, "'"));
+  }
+
   // Validate PMD thread configurations
   if (!config.pmd_threads.empty()) {
     // Get available lcores from coremask

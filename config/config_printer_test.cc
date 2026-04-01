@@ -318,10 +318,13 @@ int main() {
   {
     DpdkConfig config;
     config.session_capacity = 2048;
+    config.session_hash_type = "rte_hash";
     std::string json = ConfigPrinter::ToJson(config);
-    TestCase("Config with session_capacity contains field",
+    TestCase("Config with session settings contains fields",
              json.find("\"session_capacity\"") != std::string::npos &&
-             json.find("2048") != std::string::npos);
+             json.find("2048") != std::string::npos &&
+             json.find("\"session_hash_type\"") != std::string::npos &&
+             json.find("\"rte_hash\"") != std::string::npos);
   }
 
   // Test: session_capacity is not printed when zero

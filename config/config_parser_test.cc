@@ -394,13 +394,29 @@ int main() {
     auto result = ConfigParser::ParseString(json_content);
     TestCase("session_capacity defaults to 0 when absent",
              result.ok() &&
-             result.value().session_capacity == 0);
+             result.value().session_capacity == 0 &&
+             result.value().session_hash_type == "rte_hash");
+  }
+
+  // Test parsing session_hash_type
+  {
+    std::string json_content = R"({
+      "session_capacity": 1024,
+      "session_hash_type": "rte_hash"
+    })";
+
+    auto result = ConfigParser::ParseString(json_content);
+    TestCase("Parse session_hash_type",
+             result.ok() &&
+             result.value().session_capacity == 1024 &&
+             result.value().session_hash_type == "rte_hash");
   }
 
   // Test session_capacity not added to additional_params
   {
     std::string json_content = R"({
       "session_capacity": 2048,
+      "session_hash_type": "rte_hash",
       "custom_field": "value"
     })";
 
@@ -412,13 +428,18 @@ int main() {
           not_in_additional = false;
           break;
         }
+        if (param.first == "session_hash_type") {
+          not_in_additional = false;
+          break;
+        }
       }
     }
-    TestCase("session_capacity not added to additional_params",
+    TestCase("session config not added to additional_params",
              result.ok() &&
-             not_in_additional &&
-             result.value().session_capacity == 2048 &&
-             result.value().additional_params.size() == 1);
+              not_in_additional &&
+              result.value().session_capacity == 2048 &&
+              result.value().session_hash_type == "rte_hash" &&
+              result.value().additional_params.size() == 1);
   }
 
   // Test error when session_capacity is not an unsigned integer
@@ -431,6 +452,18 @@ int main() {
     TestCase("Error when session_capacity is invalid type",
              !result.ok() &&
              result.status().message().find("must be an unsigned integer") != std::string::npos);
+  }
+
+  // Test error when session_hash_type is not a string
+  {
+    std::string json_content = R"({
+      "session_hash_type": 123
+    })";
+
+    auto result = ConfigParser::ParseString(json_content);
+    TestCase("Error when session_hash_type is invalid type",
+             !result.ok() &&
+             result.status().message().find("must be a string") != std::string::npos);
   }
 
   std::cout << "\n";

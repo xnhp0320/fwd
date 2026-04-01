@@ -109,6 +109,9 @@ struct DpdkConfig {
   // Maximum number of concurrent sessions. 0 = session tracking disabled.
   uint32_t session_capacity = 0;
 
+  // Session table backend type. Currently only "rte_hash" is supported.
+  std::string session_hash_type = "rte_hash";
+
   // Path to FIB file. Empty = no FIB.
   std::string fib_file;
 

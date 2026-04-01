@@ -212,6 +212,34 @@ cc_test(
 )
 
 cc_library(
+    name = "rcu_hash_table",
+    hdrs = ["rcu_hash_table.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//rcu:intrusive_rcu_list",
+        "//rcu:pmd_retire_state",
+        "//rcu:rcu_manager",
+        "//rcu:deferred_work_item",
+        "//:dpdk_lib",
+    ],
+)
+
+cc_test(
+    name = "rcu_hash_table_test",
+    srcs = ["rcu_hash_table_test.cc"],
+    deps = [
+        ":rcu_hash_table",
+        "//rcu:rcu_manager",
+        "//rcu:pmd_retire_state",
+        "//processor:pmd_job",
+        "//rxtx:test_utils",
+        "//:dpdk_lib",
+        "@boost.asio",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "f14_simd",
     hdrs = ["f14_simd.h"],
     visibility = ["//visibility:public"],

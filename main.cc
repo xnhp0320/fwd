@@ -85,6 +85,7 @@ int main(int argc, char **argv) {
     dpdk_config::ControlPlane::Config control_config;
     control_config.socket_path = socket_path;
     control_config.session_capacity = config_or->session_capacity;
+    control_config.session_hash_type = config_or->session_hash_type;
     control_config.fib_file = config_or->fib_file;
     control_config.fib_algorithm = config_or->fib_algorithm;
     
