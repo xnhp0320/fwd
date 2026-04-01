@@ -39,6 +39,43 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "pmd_retire_state",
+    hdrs = ["pmd_retire_state.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":rcu_manager",
+        "//processor:pmd_job",
+        "//:dpdk_lib",
+    ],
+)
+
+cc_library(
+    name = "intrusive_rcu_list",
+    hdrs = ["intrusive_rcu_list.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":deferred_work_item",
+        ":pmd_retire_state",
+        ":rcu_manager",
+        "//:dpdk_lib",
+    ],
+)
+
+cc_test(
+    name = "intrusive_rcu_list_test",
+    srcs = ["intrusive_rcu_list_test.cc"],
+    deps = [
+        ":intrusive_rcu_list",
+        ":rcu_manager",
+        "//processor:pmd_job",
+        "//rxtx:test_utils",
+        "//:dpdk_lib",
+        "@boost.asio",
+        "@googletest//:gtest_main",
+    ],
+)
+
 # cc_test(
 #     name = "rcu_manager_test",
 #     srcs = ["rcu_manager_test.cc"],

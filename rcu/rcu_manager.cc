@@ -116,9 +116,7 @@ absl::Status RcuManager::Start() {
   }
 
   running_ = true;
-  if (!pending_.empty()) {
-    ArmTimer();
-  }
+  ArmTimer();
   return absl::OkStatus();
 }
 
@@ -142,9 +140,7 @@ void RcuManager::OnPollTimer() {
   DrainMpscQueue();
   ProcessPendingItems();
 
-  if (!pending_.empty()) {
-    ArmTimer();
-  }
+  ArmTimer();
 }
 
 void RcuManager::DrainMpscQueue() {
