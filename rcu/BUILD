@@ -54,6 +54,12 @@ cc_library(
     name = "intrusive_rcu_list",
     hdrs = ["intrusive_rcu_list.h"],
     visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "rcu_retire",
+    hdrs = ["rcu_retire.h"],
+    visibility = ["//visibility:public"],
     deps = [
         ":deferred_work_item",
         ":pmd_retire_state",
@@ -68,6 +74,7 @@ cc_test(
     deps = [
         ":intrusive_rcu_list",
         ":rcu_manager",
+        ":rcu_retire",
         "//processor:pmd_job",
         "//rxtx:test_utils",
         "//:dpdk_lib",

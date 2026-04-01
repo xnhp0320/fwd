@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include "processor/pmd_job.h"
+#include "rcu/rcu_retire.h"
 #include "rxtx/test_utils.h"
 
 namespace rxtx {
@@ -224,17 +225,19 @@ class RcuHashTableRetireTest : public ::testing::Test {
 };
 
 TEST_F(RcuHashTableRetireTest, RetireViaCallAfterGracePeriod) {
-  TestTable table(16, &rcu_manager_);
+  TestTable table(16);
   auto node = std::make_unique<TestNode>(42, 99);
   bool retired = false;
 
   table.Insert(node.get());
   TestNode* raw = node.release();
-  table.RemoveAndRetireGracePeriod(raw, [&retired](TestNode* n) {
+  EXPECT_TRUE(table.Remove(raw));
+  EXPECT_EQ(table.Find(42), nullptr);
+
+  rcu::RetireViaGracePeriod(&rcu_manager_, raw, [&retired](TestNode* n) {
     retired = true;
     delete n;
   });
-  EXPECT_EQ(table.Find(42), nullptr);
   EXPECT_FALSE(retired);
 
   PollIoUntil(true, &retired);
@@ -242,17 +245,19 @@ TEST_F(RcuHashTableRetireTest, RetireViaCallAfterGracePeriod) {
 }
 
 TEST_F(RcuHashTableRetireTest, RetireViaPostDeferredWork) {
-  TestTable table(16, &rcu_manager_);
+  TestTable table(16);
   auto node = std::make_unique<TestNode>(42, 99);
   bool retired = false;
 
   table.Insert(node.get());
   TestNode* raw = node.release();
-  table.RemoveAndRetireDeferred(raw, [&retired](TestNode* n) {
+  EXPECT_TRUE(table.Remove(raw));
+  EXPECT_EQ(table.Find(42), nullptr);
+
+  rcu::RetireViaDeferred(&rcu_manager_, raw, [&retired](TestNode* n) {
     retired = true;
     delete n;
   });
-  EXPECT_EQ(table.Find(42), nullptr);
   EXPECT_FALSE(retired);
 
   PollIoUntil(true, &retired);
@@ -262,17 +267,19 @@ TEST_F(RcuHashTableRetireTest, RetireViaPostDeferredWork) {
 TEST_F(RcuHashTableRetireTest, RetireViaPmdJobRunner) {
   processor::PmdJobRunner runner;
   rcu::PmdRetireState pmd_retire_state(&rcu_manager_, &runner);
-  TestTable table(16, &rcu_manager_, &pmd_retire_state);
+  TestTable table(16);
   auto node = std::make_unique<TestNode>(42, 99);
   bool retired = false;
 
   table.Insert(node.get());
   TestNode* raw = node.release();
-  table.RemoveAndRetirePmdJob(raw, [&retired](TestNode* n) {
+  EXPECT_TRUE(table.Remove(raw));
+  EXPECT_EQ(table.Find(42), nullptr);
+
+  rcu::RetireViaPmdJob(&pmd_retire_state, raw, [&retired](TestNode* n) {
     retired = true;
     delete n;
   });
-  EXPECT_EQ(table.Find(42), nullptr);
   EXPECT_FALSE(retired);
   EXPECT_TRUE(pmd_retire_state.HasPending());
 

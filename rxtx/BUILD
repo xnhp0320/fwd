@@ -217,9 +217,6 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//rcu:intrusive_rcu_list",
-        "//rcu:pmd_retire_state",
-        "//rcu:rcu_manager",
-        "//rcu:deferred_work_item",
         "//:dpdk_lib",
     ],
 )
@@ -230,6 +227,7 @@ cc_test(
     deps = [
         ":rcu_hash_table",
         "//rcu:rcu_manager",
+        "//rcu:rcu_retire",
         "//rcu:pmd_retire_state",
         "//processor:pmd_job",
         "//rxtx:test_utils",

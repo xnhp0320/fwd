@@ -6,17 +6,15 @@
 // seqlock version counter, kSlotsPerBucket signature/chain-head pairs, and
 // an overflow chain head for when all sig slots are occupied.
 //
-// Shares IntrusiveRcuListHook with IntrusiveRcuList so nodes can participate
-// in either a standalone list or a hash table (but not both simultaneously).
+// Each chain head is an IntrusiveRcuList, so bucket operations use the
+// list's instance methods directly rather than raw atomic pointers.
 //
-// Chain operations and retire logic are delegated to IntrusiveRcuList's
-// static API — no duplication.
+// The table itself owns no RCU reclamation state.  After calling Remove(),
+// the caller is responsible for retiring the unlinked item using the free
+// helpers in rcu_retire.h (RetireViaGracePeriod, RetireViaDeferred,
+// RetireViaPmdJob).
 //
-// Two configuration shapes (same as IntrusiveRcuList):
-//   (bucket_count, rcu_manager)                  — grace period + deferred
-//   (bucket_count, rcu_manager, pmd_retire_state) — PMD job retire
-//
-// Reads (Find, ForEach) are lockless.  Writes (Insert, Remove, Retire*) take
+// Reads (Find, ForEach) are lockless.  Writes (Insert, Remove) take
 // the per-bucket spinlock.
 
 #include <atomic>
@@ -30,8 +28,6 @@
 #include <rte_pause.h>
 
 #include "rcu/intrusive_rcu_list.h"
-#include "rcu/pmd_retire_state.h"
-#include "rcu/rcu_manager.h"
 
 namespace rxtx {
 
@@ -45,11 +41,9 @@ template <typename T,
           typename Hash = std::hash<Key>,
           typename KeyEqual = std::equal_to<Key>>
 class RcuHashTable {
-  // Reuse chain / retire logic from IntrusiveRcuList.
   using Chain = rcu::IntrusiveRcuList<T, HookMember>;
 
  public:
-  using RetireFn = std::function<void(T*)>;
   struct PrefetchContext {
     std::size_t bucket_idx = 0;
     uint16_t sig = kEmptySig;
@@ -57,33 +51,9 @@ class RcuHashTable {
 
   RcuHashTable() = default;
 
-  // No retire support.
   explicit RcuHashTable(std::size_t bucket_count)
       : bucket_count_(bucket_count), bucket_mask_(bucket_count - 1) {
     assert(bucket_count > 0 && (bucket_count & bucket_mask_) == 0);
-    AllocBuckets();
-  }
-
-  // RcuManager-only: grace period + deferred retire.
-  RcuHashTable(std::size_t bucket_count, rcu::RcuManager* rcu_manager)
-      : bucket_count_(bucket_count),
-        bucket_mask_(bucket_count - 1),
-        rcu_manager_(rcu_manager) {
-    assert(bucket_count > 0 && (bucket_count & bucket_mask_) == 0);
-    assert(rcu_manager != nullptr);
-    AllocBuckets();
-  }
-
-  // RcuManager + PmdRetireState: PMD job retire.
-  RcuHashTable(std::size_t bucket_count, rcu::RcuManager* rcu_manager,
-               rcu::PmdRetireState* pmd_retire_state)
-      : bucket_count_(bucket_count),
-        bucket_mask_(bucket_count - 1),
-        rcu_manager_(rcu_manager),
-        pmd_retire_state_(pmd_retire_state) {
-    assert(bucket_count > 0 && (bucket_count & bucket_mask_) == 0);
-    assert(rcu_manager != nullptr);
-    assert(pmd_retire_state != nullptr);
     AllocBuckets();
   }
 
@@ -117,12 +87,12 @@ class RcuHashTable {
       T* result = nullptr;
       for (std::size_t i = 0; i < kSlotsPerBucket; ++i) {
         if (bucket->sigs[i] == ctx.sig) {
-          result = Chain::ChainFindIf(bucket->heads[i], match);
+          result = bucket->heads[i].FindIf(match);
           if (result != nullptr) break;
         }
       }
       if (result == nullptr) {
-        result = Chain::ChainFindIf(bucket->overflow, match);
+        result = bucket->overflow.FindIf(match);
       }
 
       if (ValidateRead(bucket, v)) return result;
@@ -142,10 +112,10 @@ class RcuHashTable {
 
         for (std::size_t i = 0; i < kSlotsPerBucket; ++i) {
           if (bucket->sigs[i] != kEmptySig) {
-            Chain::ChainForEach(bucket->heads[i], fn);
+            bucket->heads[i].ForEach(fn);
           }
         }
-        Chain::ChainForEach(bucket->overflow, fn);
+        bucket->overflow.ForEach(fn);
 
         if (ValidateRead(bucket, v)) break;
       }
@@ -172,12 +142,12 @@ class RcuHashTable {
     std::size_t empty_slot = kSlotsPerBucket;
     for (std::size_t i = 0; i < kSlotsPerBucket; ++i) {
       if (bucket->sigs[i] == sig) {
-        if (Chain::ChainFindIf(bucket->heads[i], match)) {
+        if (bucket->heads[i].FindIf(match)) {
           EndWrite(bucket);
           UnlockBucket(bucket);
           return false;  // duplicate
         }
-        Chain::ChainInsert(bucket->heads[i], item);
+        bucket->heads[i].InsertHead(item);
         EndWrite(bucket);
         UnlockBucket(bucket);
         return true;
@@ -188,7 +158,7 @@ class RcuHashTable {
     }
 
     // Check overflow for duplicate.
-    if (Chain::ChainFindIf(bucket->overflow, match)) {
+    if (bucket->overflow.FindIf(match)) {
       EndWrite(bucket);
       UnlockBucket(bucket);
       return false;
@@ -197,14 +167,14 @@ class RcuHashTable {
     // Use an empty sig slot if available.
     if (empty_slot < kSlotsPerBucket) {
       bucket->sigs[empty_slot] = sig;
-      Chain::ChainInsert(bucket->heads[empty_slot], item);
+      bucket->heads[empty_slot].InsertHead(item);
       EndWrite(bucket);
       UnlockBucket(bucket);
       return true;
     }
 
     // All sig slots occupied — insert into overflow chain.
-    Chain::ChainInsert(bucket->overflow, item);
+    bucket->overflow.InsertHead(item);
     EndWrite(bucket);
     UnlockBucket(bucket);
     return true;
@@ -222,8 +192,8 @@ class RcuHashTable {
 
     for (std::size_t i = 0; i < kSlotsPerBucket; ++i) {
       if (bucket->sigs[i] == sig) {
-        if (Chain::ChainRemove(bucket->heads[i], item)) {
-          if (bucket->heads[i].load(std::memory_order_relaxed) == nullptr) {
+        if (bucket->heads[i].Remove(item)) {
+          if (bucket->heads[i].Empty()) {
             bucket->sigs[i] = kEmptySig;
           }
           EndWrite(bucket);
@@ -233,39 +203,10 @@ class RcuHashTable {
       }
     }
 
-    bool removed = Chain::ChainRemove(bucket->overflow, item);
+    bool removed = bucket->overflow.Remove(item);
     EndWrite(bucket);
     UnlockBucket(bucket);
     return removed;
-  }
-
-  // --- Retire functions (remove + delegate to Chain statics) ---------------
-
-  void RemoveAndRetireGracePeriod(T* item, RetireFn retire_fn) {
-    assert(rcu_manager_ != nullptr && pmd_retire_state_ == nullptr);
-    assert(item != nullptr && retire_fn);
-    bool removed = Remove(item);
-    assert(removed);
-    (void)removed;
-    Chain::RetireGracePeriod(rcu_manager_, item, std::move(retire_fn));
-  }
-
-  void RemoveAndRetireDeferred(T* item, RetireFn retire_fn) {
-    assert(rcu_manager_ != nullptr && pmd_retire_state_ == nullptr);
-    assert(item != nullptr && retire_fn);
-    bool removed = Remove(item);
-    assert(removed);
-    (void)removed;
-    Chain::RetireDeferred(rcu_manager_, item, std::move(retire_fn));
-  }
-
-  void RemoveAndRetirePmdJob(T* item, RetireFn retire_fn) {
-    assert(rcu_manager_ != nullptr && pmd_retire_state_ != nullptr);
-    assert(item != nullptr && retire_fn);
-    bool removed = Remove(item);
-    assert(removed);
-    (void)removed;
-    Chain::RetirePmdJob(pmd_retire_state_, item, std::move(retire_fn));
   }
 
   // --- Accessors -----------------------------------------------------------
@@ -279,8 +220,8 @@ class RcuHashTable {
   //   lock      4 B   std::atomic<uint32_t> spinlock (0 = unlocked)
   //   version   4 B   seqlock counter (even = stable, odd = writer active)
   //   sigs      8 B   uint16_t[4] hash signatures (0 = empty)
-  //   heads    32 B   std::atomic<Hook*>[4] chain heads
-  //   overflow  8 B   std::atomic<Hook*> overflow chain head
+  //   heads    32 B   Chain[4] intrusive list chain heads
+  //   overflow  8 B   Chain overflow chain head
   //   pad       8 B
   //            -----
   //            64 B   == RTE_CACHE_LINE_SIZE
@@ -289,8 +230,8 @@ class RcuHashTable {
     std::atomic<uint32_t> lock{0};
     std::atomic<uint32_t> version{0};
     uint16_t sigs[kSlotsPerBucket]{};
-    std::atomic<rcu::IntrusiveRcuListHook*> heads[kSlotsPerBucket]{};
-    std::atomic<rcu::IntrusiveRcuListHook*> overflow{nullptr};
+    Chain heads[kSlotsPerBucket];
+    Chain overflow;
   };
 
   static_assert(sizeof(Bucket) == RTE_CACHE_LINE_SIZE,
@@ -373,8 +314,6 @@ class RcuHashTable {
   Bucket* buckets_ = nullptr;
   std::size_t bucket_count_ = 0;
   std::size_t bucket_mask_ = 0;
-  rcu::RcuManager* rcu_manager_ = nullptr;
-  rcu::PmdRetireState* pmd_retire_state_ = nullptr;
 
   [[no_unique_address]] KeyExtractor key_extractor_;
   [[no_unique_address]] Hash hash_;

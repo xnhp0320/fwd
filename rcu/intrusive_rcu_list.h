@@ -5,13 +5,6 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
-
-#include <rte_rcu_qsbr.h>
-
-#include "rcu/deferred_work_item.h"
-#include "rcu/pmd_retire_state.h"
-#include "rcu/rcu_manager.h"
 
 namespace rcu {
 
@@ -19,38 +12,24 @@ struct IntrusiveRcuListHook {
   std::atomic<IntrusiveRcuListHook*> next{nullptr};
 };
 
-template <typename T>
-using RetireFn = std::function<void(T*)>;
-
 // ---------------------------------------------------------------------------
-// IntrusiveRcuList — intrusive singly-linked list with RCU-deferred reclaim.
+// IntrusiveRcuList — lightweight intrusive singly-linked list.
 //
-// Two configuration shapes:
-//   (rcu_manager)                    — list without a PMD retire context.
-//                                      Retire via RemoveAndRetireGracePeriod
-//                                      (control-plane thread) or
-//                                      RemoveAndRetireDeferred (PMD thread).
-//   (rcu_manager, pmd_retire_state)  — list with a shared PMD retire context.
-//                                      Retire via RemoveAndRetirePmdJob.
-//                                      The caller manages PmdRetireState
-//                                      lifetime and calls RefreshScheduling().
+// The list itself owns only a head pointer.  It provides insert, remove,
+// traversal, and lookup — nothing more.  Reclamation of removed items is
+// the caller's responsibility; see rcu_retire.h for free helper functions
+// (RetireViaGracePeriod, RetireViaDeferred, RetireViaPmdJob).
 //
-// Calling the wrong retire function for the configuration is a programming
-// error (assert-fail).
-//
-// Writers (InsertHead / Remove / Retire*) must be serialized externally.
-// ForEach is safe for concurrent read-only traversal.
-//
-// --- Static API ---
-// Static chain operations (ChainInsert, ChainRemove, ChainForEach,
-// ChainFindIf) operate on any external atomic<Hook*> head pointer.
-// Static retire helpers (RetireGracePeriod, RetireDeferred, RetirePmdJob)
-// schedule reclamation without touching the chain.  Both IntrusiveRcuList
-// and RcuHashTable build on these statics.
+// Writers (InsertHead / Remove) must be serialized externally.
+// ForEach / FindIf are safe for concurrent read-only traversal.
 // ---------------------------------------------------------------------------
 template <typename T, IntrusiveRcuListHook T::*HookMember>
 class IntrusiveRcuList {
  public:
+  IntrusiveRcuList() = default;
+  IntrusiveRcuList(const IntrusiveRcuList&) = delete;
+  IntrusiveRcuList& operator=(const IntrusiveRcuList&) = delete;
+
   // --- Static hook helpers (public) ----------------------------------------
 
   static IntrusiveRcuListHook* Hook(T* item) { return &(item->*HookMember); }
@@ -65,31 +44,29 @@ class IntrusiveRcuList {
             &(static_cast<const T*>(nullptr)->*HookMember)));
   }
 
-  // --- Static chain operations ---------------------------------------------
-  // Operate on any external atomic<Hook*> head.  These are the building
-  // blocks shared by IntrusiveRcuList (instance methods) and RcuHashTable.
+  // --- List operations -----------------------------------------------------
 
   // Single-writer prepend.
-  static bool ChainInsert(std::atomic<IntrusiveRcuListHook*>& head, T* item) {
+  bool InsertHead(T* item) {
     if (item == nullptr) return false;
     IntrusiveRcuListHook* hook = Hook(item);
-    hook->next.store(head.load(std::memory_order_relaxed),
+    hook->next.store(head_.load(std::memory_order_relaxed),
                      std::memory_order_relaxed);
-    head.store(hook, std::memory_order_release);
+    head_.store(hook, std::memory_order_release);
     return true;
   }
 
-  // Unlink item from the chain.  Returns true if found and removed.
-  static bool ChainRemove(std::atomic<IntrusiveRcuListHook*>& head, T* item) {
+  // Unlink item from the list.  Returns true if found and removed.
+  bool Remove(T* item) {
     if (item == nullptr) return false;
     IntrusiveRcuListHook* target = Hook(item);
     IntrusiveRcuListHook* prev = nullptr;
-    IntrusiveRcuListHook* curr = head.load(std::memory_order_acquire);
+    IntrusiveRcuListHook* curr = head_.load(std::memory_order_acquire);
     while (curr != nullptr) {
       IntrusiveRcuListHook* next = curr->next.load(std::memory_order_acquire);
       if (curr == target) {
         if (prev == nullptr) {
-          head.store(next, std::memory_order_release);
+          head_.store(next, std::memory_order_release);
         } else {
           prev->next.store(next, std::memory_order_release);
         }
@@ -104,9 +81,8 @@ class IntrusiveRcuList {
 
   // RCU-safe traversal.  fn receives T& (non-const) or const T&.
   template <typename Fn>
-  static void ChainForEach(const std::atomic<IntrusiveRcuListHook*>& head,
-                           Fn&& fn) {
-    IntrusiveRcuListHook* curr = head.load(std::memory_order_acquire);
+  void ForEach(Fn&& fn) const {
+    IntrusiveRcuListHook* curr = head_.load(std::memory_order_acquire);
     while (curr != nullptr) {
       fn(*ItemFromHook(curr));
       curr = curr->next.load(std::memory_order_acquire);
@@ -115,9 +91,8 @@ class IntrusiveRcuList {
 
   // Return the first node matching the predicate, or nullptr.
   template <typename Pred>
-  static T* ChainFindIf(const std::atomic<IntrusiveRcuListHook*>& head,
-                         Pred&& pred) {
-    IntrusiveRcuListHook* curr = head.load(std::memory_order_acquire);
+  T* FindIf(Pred&& pred) const {
+    IntrusiveRcuListHook* curr = head_.load(std::memory_order_acquire);
     while (curr != nullptr) {
       T* item = ItemFromHook(curr);
       if (pred(*item)) return item;
@@ -126,109 +101,18 @@ class IntrusiveRcuList {
     return nullptr;
   }
 
-  // --- Static retire helpers -----------------------------------------------
-  // Schedule reclamation for an already-removed item.  These do NOT touch the
-  // chain — the caller is responsible for unlinking first.
-
-  static void RetireGracePeriod(RcuManager* mgr, T* item,
-                                RetireFn<T> retire_fn) {
-    assert(mgr != nullptr && item != nullptr && retire_fn);
-    auto status = mgr->CallAfterGracePeriod(
-        [item, fn = std::move(retire_fn)]() { fn(item); });
-    assert(status.ok());
-    (void)status;
-  }
-
-  static void RetireDeferred(RcuManager* mgr, T* item,
-                             RetireFn<T> retire_fn) {
-    assert(mgr != nullptr && item != nullptr && retire_fn);
-    struct rte_rcu_qsbr* qsbr = mgr->GetQsbrVar();
-    assert(qsbr != nullptr);
-    auto* work = new DeferredWorkItem();
-    work->token = rte_rcu_qsbr_start(qsbr);
-    work->callback = [item, fn = std::move(retire_fn)]() { fn(item); };
-    mgr->PostDeferredWork(work);
-  }
-
-  static void RetirePmdJob(PmdRetireState* state, T* item,
-                           RetireFn<T> retire_fn) {
-    assert(state != nullptr && item != nullptr && retire_fn);
-    state->AddPendingRetire(
-        [item, fn = std::move(retire_fn)]() { fn(item); });
-  }
-
-  // --- Constructors --------------------------------------------------------
-
-  // List-only (no retire support).
-  IntrusiveRcuList() = default;
-
-  // RcuManager-only: supports RemoveAndRetireGracePeriod (control-plane
-  // thread) and RemoveAndRetireDeferred (PMD thread).
-  explicit IntrusiveRcuList(RcuManager* rcu_manager)
-      : rcu_manager_(rcu_manager) {
-    assert(rcu_manager != nullptr);
-  }
-
-  // RcuManager + PmdRetireState: supports RemoveAndRetirePmdJob.
-  // The PmdRetireState is shared (non-owning) — caller manages its lifetime.
-  IntrusiveRcuList(RcuManager* rcu_manager, PmdRetireState* pmd_retire_state)
-      : rcu_manager_(rcu_manager), pmd_retire_state_(pmd_retire_state) {
-    assert(rcu_manager != nullptr);
-    assert(pmd_retire_state != nullptr);
-  }
-
-  IntrusiveRcuList(const IntrusiveRcuList&) = delete;
-  IntrusiveRcuList& operator=(const IntrusiveRcuList&) = delete;
-
-  // --- Instance list operations (delegate to static chain ops) -------------
-
-  bool InsertHead(T* item) { return ChainInsert(head_, item); }
-  bool Remove(T* item) { return ChainRemove(head_, item); }
-
-  template <typename Fn>
-  void ForEach(Fn&& fn) const { ChainForEach(head_, std::forward<Fn>(fn)); }
-
-  template <typename Pred>
-  T* FindIf(Pred&& pred) const {
-    return ChainFindIf(head_, std::forward<Pred>(pred));
-  }
-
   std::size_t CountUnsafe() const {
     std::size_t count = 0;
     ForEach([&count](const T&) { ++count; });
     return count;
   }
 
-  // --- Instance retire functions (remove + static retire) ------------------
-
-  void RemoveAndRetireGracePeriod(T* item, RetireFn<T> retire_fn) {
-    assert(rcu_manager_ != nullptr && pmd_retire_state_ == nullptr);
-    bool removed = ChainRemove(head_, item);
-    assert(removed);
-    (void)removed;
-    RetireGracePeriod(rcu_manager_, item, std::move(retire_fn));
-  }
-
-  void RemoveAndRetireDeferred(T* item, RetireFn<T> retire_fn) {
-    assert(rcu_manager_ != nullptr && pmd_retire_state_ == nullptr);
-    bool removed = ChainRemove(head_, item);
-    assert(removed);
-    (void)removed;
-    RetireDeferred(rcu_manager_, item, std::move(retire_fn));
-  }
-
-  void RemoveAndRetirePmdJob(T* item, RetireFn<T> retire_fn) {
-    assert(rcu_manager_ != nullptr && pmd_retire_state_ != nullptr);
-    bool removed = ChainRemove(head_, item);
-    assert(removed);
-    (void)removed;
-    RetirePmdJob(pmd_retire_state_, item, std::move(retire_fn));
+  bool Empty() const {
+    return head_.load(std::memory_order_relaxed) == nullptr;
   }
 
  private:
   std::atomic<IntrusiveRcuListHook*> head_{nullptr};
-  RcuManager* rcu_manager_ = nullptr;
-  PmdRetireState* pmd_retire_state_ = nullptr;  // non-owning
 };
 
 }  // namespace rcu

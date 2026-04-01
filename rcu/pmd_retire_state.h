@@ -16,10 +16,10 @@ namespace rcu {
 // ---------------------------------------------------------------------------
 // PmdRetireState — type-erased, non-template retire context for PMD threads.
 //
-// A PMD thread creates one PmdRetireState and shares it with all
-// IntrusiveRcuList instances that use RemoveAndRetirePmdJob.  The state
-// manages a single PmdJob that periodically checks whether pending retires
-// have passed their QSBR grace period.
+// A PMD thread creates one PmdRetireState and uses it with
+// RetireViaPmdJob() from rcu_retire.h for RCU-deferred reclamation.
+// The state manages a single PmdJob that periodically checks whether
+// pending retires have passed their QSBR grace period.
 //
 // Usage (in PMD loop):
 //   pmd_retire_state.RefreshScheduling();   // manage the retire-check job

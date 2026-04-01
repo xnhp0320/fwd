@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include "processor/pmd_job.h"
+#include "rcu/rcu_retire.h"
 #include "rxtx/test_utils.h"
 
 namespace rcu {
@@ -122,17 +123,19 @@ class IntrusiveRcuListRetireTest : public ::testing::Test {
 };
 
 TEST_F(IntrusiveRcuListRetireTest, RetireViaCallAfterGracePeriod) {
-  TestList list(&rcu_manager_);
+  TestList list;
   auto node = std::make_unique<TestNode>(10);
   bool retired = false;
 
   list.InsertHead(node.get());
   TestNode* raw = node.release();
-  list.RemoveAndRetireGracePeriod(raw, [&retired](TestNode* n) {
+  EXPECT_TRUE(list.Remove(raw));
+  EXPECT_EQ(list.CountUnsafe(), 0u);
+
+  RetireViaGracePeriod(&rcu_manager_, raw, [&retired](TestNode* n) {
     retired = true;
     delete n;
   });
-  EXPECT_EQ(list.CountUnsafe(), 0u);
   EXPECT_FALSE(retired);
 
   PollIoUntil(true, &retired);
@@ -140,17 +143,19 @@ TEST_F(IntrusiveRcuListRetireTest, RetireViaCallAfterGracePeriod) {
 }
 
 TEST_F(IntrusiveRcuListRetireTest, RetireViaPostDeferredWork) {
-  TestList list(&rcu_manager_);
+  TestList list;
   auto node = std::make_unique<TestNode>(20);
   bool retired = false;
 
   list.InsertHead(node.get());
   TestNode* raw = node.release();
-  list.RemoveAndRetireDeferred(raw, [&retired](TestNode* n) {
+  EXPECT_TRUE(list.Remove(raw));
+  EXPECT_EQ(list.CountUnsafe(), 0u);
+
+  RetireViaDeferred(&rcu_manager_, raw, [&retired](TestNode* n) {
     retired = true;
     delete n;
   });
-  EXPECT_EQ(list.CountUnsafe(), 0u);
   EXPECT_FALSE(retired);
 
   PollIoUntil(true, &retired);
@@ -160,17 +165,19 @@ TEST_F(IntrusiveRcuListRetireTest, RetireViaPostDeferredWork) {
 TEST_F(IntrusiveRcuListRetireTest, RetireViaPmdJobRunner) {
   processor::PmdJobRunner runner;
   PmdRetireState pmd_retire_state(&rcu_manager_, &runner);
-  TestList list(&rcu_manager_, &pmd_retire_state);
+  TestList list;
   auto node = std::make_unique<TestNode>(30);
   bool retired = false;
 
   list.InsertHead(node.get());
   TestNode* raw = node.release();
-  list.RemoveAndRetirePmdJob(raw, [&retired](TestNode* n) {
+  EXPECT_TRUE(list.Remove(raw));
+  EXPECT_EQ(list.CountUnsafe(), 0u);
+
+  RetireViaPmdJob(&pmd_retire_state, raw, [&retired](TestNode* n) {
     retired = true;
     delete n;
   });
-  EXPECT_EQ(list.CountUnsafe(), 0u);
   EXPECT_FALSE(retired);
   EXPECT_TRUE(pmd_retire_state.HasPending());
 
