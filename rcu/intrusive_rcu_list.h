@@ -70,7 +70,6 @@ class IntrusiveRcuList {
         } else {
           prev->next.store(next, std::memory_order_release);
         }
-        curr->next.store(nullptr, std::memory_order_release);
         return true;
       }
       prev = curr;
