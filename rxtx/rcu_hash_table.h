@@ -66,6 +66,36 @@ class RcuHashTable {
   RcuHashTable(const RcuHashTable&) = delete;
   RcuHashTable& operator=(const RcuHashTable&) = delete;
 
+  RcuHashTable(RcuHashTable&& other) noexcept
+      : buckets_(other.buckets_),
+        bucket_count_(other.bucket_count_),
+        bucket_mask_(other.bucket_mask_),
+        key_extractor_(std::move(other.key_extractor_)),
+        hash_(std::move(other.hash_)),
+        key_equal_(std::move(other.key_equal_)) {
+    other.buckets_ = nullptr;
+    other.bucket_count_ = 0;
+    other.bucket_mask_ = 0;
+  }
+
+  RcuHashTable& operator=(RcuHashTable&& other) noexcept {
+    if (this != &other) {
+      if (buckets_ != nullptr) {
+        rte_free(buckets_);
+      }
+      buckets_ = other.buckets_;
+      bucket_count_ = other.bucket_count_;
+      bucket_mask_ = other.bucket_mask_;
+      key_extractor_ = std::move(other.key_extractor_);
+      hash_ = std::move(other.hash_);
+      key_equal_ = std::move(other.key_equal_);
+      other.buckets_ = nullptr;
+      other.bucket_count_ = 0;
+      other.bucket_mask_ = 0;
+    }
+    return *this;
+  }
+
   // --- Lockless read operations --------------------------------------------
 
   void Prefetch(const Key& key, PrefetchContext& ctx_out) const {
