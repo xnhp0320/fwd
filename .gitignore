@@ -3,6 +3,7 @@ MODULE.bazel.lock
 MODULE.bazel.local
 bazel-bin
 bazel-dpdk_bazel_xsight
+bazel-fwd
 bazel-out
 bazel-testlogs
 tests/test-results/

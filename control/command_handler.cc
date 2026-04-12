@@ -172,6 +172,16 @@ void CommandHandler::SetSessionTable(session::SessionTable* session_table) {
   }
 }
 
+void CommandHandler::SetVmLocationTable(
+    vm_location::VmLocationTable* table) {
+  vm_location_table_ = table;
+  if (vm_location_table_ != nullptr) {
+    RegisterSyncCommand(
+        "get_vm_locations", "vm_location",
+        [this](const json& params) { return HandleGetVmLocations(params); });
+  }
+}
+
 void CommandHandler::SetFibInfo(const FibInfo& fib_info) {
   fib_info_ = fib_info;
   RegisterSyncCommand("get_fib_info", "fib",
@@ -337,6 +347,47 @@ CommandHandler::CommandResponse CommandHandler::HandleGetFibInfo(
       {"number_tbl8s", fib_info_.number_tbl8s},
       {"memory_bytes", total_bytes},
   };
+  return response;
+}
+
+CommandHandler::CommandResponse CommandHandler::HandleGetVmLocations(
+    const nlohmann::json& /*params*/) {
+  CommandResponse response = CommandResponse::Success(json::object());
+  json locations_array = json::array();
+
+  if (vm_location_table_ != nullptr) {
+    vm_location_table_->ForEachKey(
+        [&](const vm_location::VmLocationKey& key, uint32_t value_id) {
+          json entry;
+          char ip_buf[INET6_ADDRSTRLEN];
+
+          // Format destination IP (key)
+          if (key.is_ipv6) {
+            inet_ntop(AF_INET6, key.ip.v6, ip_buf, sizeof(ip_buf));
+          } else {
+            inet_ntop(AF_INET, &key.ip.v4, ip_buf, sizeof(ip_buf));
+          }
+          entry["dst_ip"] = ip_buf;
+          entry["is_ipv6"] = key.is_ipv6;
+          entry["value_id"] = value_id;
+
+          // Format tunnel IP (value)
+          const vm_location::TunnelInfo* tunnel =
+              vm_location_table_->slot_array().Get(value_id);
+          if (tunnel != nullptr) {
+            if (tunnel->is_ipv6) {
+              inet_ntop(AF_INET6, tunnel->ip.v6, ip_buf, sizeof(ip_buf));
+            } else {
+              inet_ntop(AF_INET, &tunnel->ip.v4, ip_buf, sizeof(ip_buf));
+            }
+            entry["tunnel_ip"] = ip_buf;
+          }
+
+          locations_array.push_back(std::move(entry));
+        });
+  }
+
+  response.result = {{"vm_locations", locations_array}};
   return response;
 }
 

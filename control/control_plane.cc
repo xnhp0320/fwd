@@ -116,6 +116,30 @@ absl::Status ControlPlane::Initialize(const Config& config) {
     }
   }
 
+  // Create VmLocationTable if configured.
+  if (config_.vm_location_value_capacity > 0) {
+    vm_location_table_ = std::make_unique<vm_location::VmLocationTable>();
+    vm_location::VmLocationTable::Config vl_config;
+    vl_config.value_capacity = config_.vm_location_value_capacity;
+    vl_config.value_bucket_count = config_.vm_location_value_bucket_count;
+    vl_config.key_capacity = config_.vm_location_key_capacity;
+    vl_config.key_bucket_count = config_.vm_location_key_bucket_count;
+    vl_config.name = "vm_location";
+    auto vl_status = vm_location_table_->Init(vl_config, rcu_manager_.get());
+    if (!vl_status.ok()) return vl_status;
+
+    // Wire VmLocationTable into each PMD thread's ProcessorContext.
+    if (thread_manager_) {
+      for (uint32_t lcore_id : thread_manager_->GetLcoreIds()) {
+        PmdThread* thread = thread_manager_->GetThread(lcore_id);
+        if (thread) {
+          thread->GetMutableProcessorContext().vm_location_table =
+              vm_location_table_.get();
+        }
+      }
+    }
+  }
+
   // Create LPM table if fib_file is configured with lpm algorithm.
   if (!config_.fib_file.empty() && config_.fib_algorithm == "lpm") {
     struct rte_lpm_config lpm_conf;
@@ -184,6 +208,11 @@ absl::Status ControlPlane::Initialize(const Config& config) {
   // Wire session table into the command handler for get_sessions command.
   if (session_table_) {
     command_handler_->SetSessionTable(session_table_.get());
+  }
+
+  // Wire VmLocationTable into the command handler for get_vm_locations command.
+  if (vm_location_table_) {
+    command_handler_->SetVmLocationTable(vm_location_table_.get());
   }
 
   // Wire FIB info into the command handler for get_fib_info command.
@@ -386,6 +415,9 @@ void ControlPlane::Shutdown() {
   // Destroy SessionTable after PMD threads stop (they hold SessionEntry
   // pointers) but before RCU manager is destroyed (hash references QSBR var).
   session_table_.reset();
+
+  // Destroy VmLocationTable after PMD threads stop.
+  vm_location_table_.reset();
 
   // Stop the event loop
   if (io_context_) {

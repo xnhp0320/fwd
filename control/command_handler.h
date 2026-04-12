@@ -12,6 +12,7 @@
 #include "control/command_api.h"
 #include "nlohmann/json.hpp"
 #include "session/session_table.h"
+#include "vm_location/vm_location_table.h"
 
 namespace dpdk_config {
 
@@ -51,6 +52,9 @@ class CommandHandler : public CommandRegistry {
   // Set the session table for get_sessions command.
   void SetSessionTable(session::SessionTable* session_table);
 
+  // Set the VmLocation table for get_vm_locations command.
+  void SetVmLocationTable(vm_location::VmLocationTable* table);
+
   // Set FIB metadata for get_fib_info command.
   struct FibInfo {
     uint32_t rules_count = 0;
@@ -86,10 +90,12 @@ class CommandHandler : public CommandRegistry {
   CommandResponse HandleGetSessions(const nlohmann::json& params);
   CommandResponse HandleGetSessionsCount(const nlohmann::json& params);
   CommandResponse HandleGetFibInfo(const nlohmann::json& params);
+  CommandResponse HandleGetVmLocations(const nlohmann::json& params);
 
   absl::flat_hash_map<std::string, CommandEntry> commands_;
   PMDThreadManager* thread_manager_;  // Not owned
   session::SessionTable* session_table_ = nullptr;  // Not owned
+  vm_location::VmLocationTable* vm_location_table_ = nullptr;  // Not owned
   FibInfo fib_info_;
   std::function<void()> shutdown_callback_;
 };

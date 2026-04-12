@@ -9,6 +9,7 @@
 #include "rcu/rcu_manager.h"
 #include "fib/fib_loader.h"
 #include "session/session_table.h"
+#include "vm_location/vm_location_table.h"
 
 namespace dpdk_config {
 
@@ -31,6 +32,10 @@ class ControlPlane {
     std::string session_hash_type = "rte_hash";
     std::string fib_file;
     std::string fib_algorithm = "lpm";
+    uint32_t vm_location_value_capacity = 0;
+    uint32_t vm_location_value_bucket_count = 0;
+    uint32_t vm_location_key_capacity = 0;
+    uint32_t vm_location_key_bucket_count = 0;
   };
 
   explicit ControlPlane(PMDThreadManager* thread_manager);
@@ -58,6 +63,7 @@ class ControlPlane {
   std::unique_ptr<SignalHandler> signal_handler_;
   std::unique_ptr<CommandHandler> command_handler_;
   std::unique_ptr<session::SessionTable> session_table_;
+  std::unique_ptr<vm_location::VmLocationTable> vm_location_table_;
   struct rte_lpm* lpm_table_ = nullptr;
   uint32_t lpm_max_rules_ = 0;
   uint32_t lpm_number_tbl8s_ = 0;

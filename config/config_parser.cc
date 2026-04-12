@@ -440,6 +440,46 @@ absl::StatusOr<DpdkConfig> ConfigParser::ParseString(
     }
   }
 
+  // Parse vm_location_value_capacity (optional unsigned integer)
+  if (j.contains("vm_location_value_capacity")) {
+    if (!j["vm_location_value_capacity"].is_number_unsigned()) {
+      return absl::InvalidArgumentError(
+          "Field 'vm_location_value_capacity' must be an unsigned integer");
+    }
+    config.vm_location_value_capacity =
+        j["vm_location_value_capacity"].get<uint32_t>();
+  }
+
+  // Parse vm_location_value_bucket_count (optional unsigned integer)
+  if (j.contains("vm_location_value_bucket_count")) {
+    if (!j["vm_location_value_bucket_count"].is_number_unsigned()) {
+      return absl::InvalidArgumentError(
+          "Field 'vm_location_value_bucket_count' must be an unsigned integer");
+    }
+    config.vm_location_value_bucket_count =
+        j["vm_location_value_bucket_count"].get<uint32_t>();
+  }
+
+  // Parse vm_location_key_capacity (optional unsigned integer)
+  if (j.contains("vm_location_key_capacity")) {
+    if (!j["vm_location_key_capacity"].is_number_unsigned()) {
+      return absl::InvalidArgumentError(
+          "Field 'vm_location_key_capacity' must be an unsigned integer");
+    }
+    config.vm_location_key_capacity =
+        j["vm_location_key_capacity"].get<uint32_t>();
+  }
+
+  // Parse vm_location_key_bucket_count (optional unsigned integer)
+  if (j.contains("vm_location_key_bucket_count")) {
+    if (!j["vm_location_key_bucket_count"].is_number_unsigned()) {
+      return absl::InvalidArgumentError(
+          "Field 'vm_location_key_bucket_count' must be an unsigned integer");
+    }
+    config.vm_location_key_bucket_count =
+        j["vm_location_key_bucket_count"].get<uint32_t>();
+  }
+
   // Parse explicit additional_params field (array of [key, value] pairs)
   if (j.contains("additional_params") && j["additional_params"].is_array()) {
     for (const auto& param : j["additional_params"]) {
@@ -456,7 +496,9 @@ absl::StatusOr<DpdkConfig> ConfigParser::ParseString(
   const std::set<std::string> known_fields = {
       "core_mask", "memory_channels", "pci_allowlist",
       "pci_blocklist", "log_level", "huge_pages", "ports", "pmd_threads",
-      "session_capacity", "session_hash_type", "fib_file", "additional_params"
+      "session_capacity", "session_hash_type", "fib_file", "additional_params",
+      "vm_location_value_capacity", "vm_location_value_bucket_count",
+      "vm_location_key_capacity", "vm_location_key_bucket_count"
   };
 
   for (auto it = j.begin(); it != j.end(); ++it) {

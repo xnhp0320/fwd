@@ -119,6 +119,12 @@ struct DpdkConfig {
   // Parsed from fib_file value, e.g. "path/to/fib.txt, tbm".
   std::string fib_algorithm = "lpm";
 
+  // VmLocation table configuration. 0 = VmLocation disabled.
+  uint32_t vm_location_value_capacity = 0;
+  uint32_t vm_location_value_bucket_count = 0;
+  uint32_t vm_location_key_capacity = 0;
+  uint32_t vm_location_key_bucket_count = 0;
+
   // Additional EAL parameters as key-value pairs for extensibility
   // Allows passing arbitrary parameters not explicitly defined above
   std::vector<std::pair<std::string, std::string>> additional_params;
